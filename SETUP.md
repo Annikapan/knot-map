@@ -103,16 +103,31 @@ Google Sheets（你维护的踩点表）          Knot agent 每周自动跑数
 
 ## Part B：发布到 GitHub Pages（约 10 分钟，一次）
 
-### B-1. 建仓库并 push
+### B-1. 建远端仓库并 push
+本地仓库**已经建好并提交过了**（18 个文件，密钥与真实数据已排除）。你只需要在 GitHub 上建一个空仓库，然后：
+
+1. GitHub → New repository → 名字填 `knot-map` → **不要**勾 README / .gitignore / license（保持完全空）→ Create
+2. 复制仓库地址，回来执行：
+
 ```bash
 cd ~/WorkBuddy/2026-09-22-18-33-40/knot-map
-git init
-git add .
-git commit -m "initial"
 git remote add origin git@github.com:<用户名>/knot-map.git
 git push -u origin main
 ```
-> 安全确认：`git status` 里**不应出现** `config.js`（.gitignore 已排除）。
+
+> 安全确认：`git ls-files` 里**不应出现** `config.js` / `asakusa.csv` / `merged_sample.csv`
+> （已 .gitignore，实测通过）。
+>
+> 用 HTTPS 还是 SSH？上面是 SSH。如果没配 SSH key，把地址换成
+> `https://github.com/<用户名>/knot-map.git` 即可（push 时输用户名 + Personal Access Token）。
+
+**提交身份**：我用的是仓库级占位身份 `annika <annika@users.noreply.github.com>`。
+改成你自己的（让 commit 关联到你的 GitHub 账号）：
+```bash
+git config user.name  "<你的GitHub用户名>"
+git config user.email "<你的GitHub邮箱>"
+git commit --amend --reset-author --no-edit
+```
 
 ### B-2. 把 key 和数据源 URL 写进 GitHub Secrets（不进仓库）
 仓库 → Settings → Secrets and variables → Actions → New repository secret：
