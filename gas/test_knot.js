@@ -137,7 +137,9 @@ check("含 ISO 周次", p39.indexOf("2026-W39") >= 0);
 check("含子商户进件", p39.indexOf("子商户进件") >= 0);
 check("含物料激励铺设", p39.indexOf("物料激励铺设") >= 0);
 check("含完整字段清单", ["merchant_id", "name", "category", "institution", "material", "address", "lat", "lng"].every(f => p39.indexOf(f) >= 0));
-check("明确要求只输出 JSON", /只输出 JSON/.test(p39));
+// 现在允许正文里有汇报（agent 主体是 Excel/Markdown），靠哨兵块把 JSON 框出来
+check("用哨兵块框住 JSON（开始标记）", p39.indexOf("<<<KNOT_JSON>>>") >= 0);
+check("用哨兵块框住 JSON（结束标记）", p39.indexOf("<<<END_KNOT_JSON>>>") >= 0);
 check("明确禁止坐标填 0", p39.indexOf("不要填 0") >= 0);
 
 /* ---------- 9. weeklyRefresh 串联 ---------- */

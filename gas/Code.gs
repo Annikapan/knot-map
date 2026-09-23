@@ -22,6 +22,11 @@ const P = () => PropertiesService.getScriptProperties();
 
 const COLS = ["week","merchant_id","name","category","institution","material","address","lat","lng","note"];
 
+/* 哨兵标记：agent 那份 prompt 既要出 Excel/Markdown 汇报，又要给地图吐 JSON，
+   正文里必然有别的文字。用哨兵把 JSON 包起来，GAS 才能从混合正文里精准截出来。 */
+const KNOT_BEGIN = "<<<KNOT_JSON>>>";
+const KNOT_END   = "<<<END_KNOT_JSON>>>";
+
 /**
  * webhook 入口：Knot 每周跑完 POST 到这里
  * 鉴权：URL 带 ?token=xxx 或 header x-knot-token
@@ -41,16 +46,24 @@ function doPost(e) {
     try { payload = JSON.parse(e.postData.contents); }
     catch (err) { return out({ ok:false, error:"invalid json" }); }
 
+    const chunk  = payload.chunk || null;    // 分片：{ i: 第几片, n: 共几片 }
+    const isLast = !chunk || !chunk.n || Number(chunk.i) >= Number(chunk.n);
+
     const rows = normalize(payload);
     if (!rows.length) return out({ ok:false, error:"no rows" });
 
     const added = appendRows(rows);          // 1) 追加进 Sheet 存档
+    // 大周（1000+ 行）会拆成好几片 POST，中间片只入库不做突合，省掉重复的全量重算
+    if (!isLast) return out({ ok:true, received:rows.length, added:added,
+                              chunk:chunk, merged:null, note:"分片写入中，最后一片触发突合" });
+
     const all   = readAll();                 // 2) 读全量（含去重：同 merchant_id 只留最新）
     const merge = buildMerged();             // 3) 处理层：踩点 × Knot 匹配 → 「合并」Sheet
     const res   = updateGitHubFile(merge.plottable ? readMerged() : all, "merged.json");
     const res2  = updateGitHubFile(all, "data.json");   // 原始 Knot 存档也留一份
 
     return out({ ok:true, received:rows.length, added:added, total:all.length,
+                 partial: !!payload.partial, chunk: chunk || undefined,
                  merged:merge, github:{ merged:res, raw:res2 } });
 
   } catch (err) {
@@ -139,15 +152,25 @@ function weeklyRefresh() {
    —— 没配就自动跳过，不影响 Knot 主动推送那条路
    ============================================================ */
 
-/** 给 Knot agent 的取数指令。关键是「只吐 JSON」，否则 GAS 解析不出来。 */
+/** 给 Knot agent 的取数指令。用哨兵块包住 JSON，正文里可以有别的话，GAS 也能精准截出来。 */
 function knotPrompt(week) {
   return [
-    "请提取 ISO 周次 " + week + "（上一自然周）日本市场的两类数据，只输出 JSON，不要任何解释文字、不要 markdown 代码块：",
+    "请提取 ISO 周次 " + week + "（上一自然周）日本市场的两类数据：",
     "1) 子商户进件：本周新完成进件的子商户",
     "2) 物料激励铺设：本周完成物料铺设的商户",
-    "字段固定为：week, merchant_id, name, category, institution, material, address, lat, lng, note",
-    "week 统一填 " + week + "；category 用数据里的状态口径；lat/lng 没有就填空字符串（不要填 0，不要猜）。",
-    "输出结构：{\"ok\":true,\"week\":\"" + week + "\",\"rows\":[ ... ]}"
+    "",
+    "先按你自己的交付方式汇报（Excel / Markdown 摘要都可以），然后在回复的最末尾追加数据块：",
+    "",
+    KNOT_BEGIN,
+    "{\"ok\":true,\"week\":\"" + week + "\",\"rows\":[ ... ]}",
+    KNOT_END,
+    "",
+    "数据块规则：",
+    "- 每行字段固定为：week, merchant_id, name, category, institution, material, address, lat, lng, note",
+    "- week 统一填 " + week + "；category 用数据里的状态口径",
+    "- 店名/地址保留日文原名，不要翻译或缩写",
+    "- lat/lng 没有就填空字符串（不要填 0、不要用城市中心代替，下游会按地址补全）",
+    "- 行数超过 300 行时拆成多个数据块，每块不超过 300 行（多个 " + KNOT_BEGIN + " ... " + KNOT_END + "）"
   ].join("\n");
 }
 
@@ -201,13 +224,55 @@ function pullFromKnot(opt) {
   return { ok:true, week: week, received: rows.length, added: appendRows(rows) };
 }
 
+/** 从一个 payload 对象里掏出行数组（兼容 rows / data / records / 裸数组） */
+function extractRows(o) {
+  if (!o) return [];
+  if (Array.isArray(o)) return o;
+  return o.rows || o.data || o.records || [];
+}
+
 /**
- * agent 的返回可能是 ① 纯 JSON ② SSE 流（data: {...}）③ 带 ```json 围栏的文本。
- * 三种都试一遍，抽成对象；抽不出来返回 null。
+ * 优先解析哨兵块：agent 汇报正文里可能夹着多个 <<<KNOT_JSON>>> ... <<<END_KNOT_JSON>>>，
+ * 每行数据量大时会分片。全部拼成一个 payload 返回。
+ * 一个有效的哨兵块都没有 → 返回 null（交给后面的兼容逻辑）。
+ */
+function parseSentinelBlocks(text) {
+  const s = String(text);
+  const merged = { ok: true, rows: [], chunks: 0, partial: false };
+  let i = 0, found = 0;
+
+  while (true) {
+    const a = s.indexOf(KNOT_BEGIN, i);
+    if (a < 0) break;
+    const b = s.indexOf(KNOT_END, a + KNOT_BEGIN.length);
+    if (b < 0) { merged.partial = true; break; }   // 有头无尾 = 被平台截断
+    const body = s.slice(a + KNOT_BEGIN.length, b).trim();
+    try {
+      const o = JSON.parse(body);
+      merged.rows = merged.rows.concat(extractRows(o));
+      if (o.week) merged.week = o.week;
+      if (o.total_rows) merged.total_rows = o.total_rows;
+      if (o.partial) merged.partial = true;
+      found++;
+    } catch (e) { /* 坏块跳过，不拖累其它块 */ }
+    i = b + KNOT_END.length;
+  }
+
+  if (!found) return null;
+  merged.chunks = found;
+  return merged;
+}
+
+/**
+ * agent 的返回可能是 ① 哨兵块 ② 纯 JSON ③ SSE 流（data: {...}）④ 带 ```json 围栏的文本。
+ * 依次试一遍，抽成对象；抽不出来返回 null。
  */
 function parseKnotPayload(text) {
   if (!text) return null;
   let s = String(text).trim();
+
+  const sentinel = parseSentinelBlocks(s);
+  if (sentinel) return sentinel;
 
   const looksRows = o => o && (Array.isArray(o) || o.rows || o.data || o.records);
   try { const o = JSON.parse(s); if (looksRows(o)) return o; } catch (e) {}
@@ -281,9 +346,12 @@ function readAll() {
   data.forEach(function (row) {
     const r = {};
     COLS.forEach(function (c, i) { r[c] = row[i]; });
-    if (!r.merchant_id) return;
-    const prev = map[r.merchant_id];
-    if (!prev || String(r.week) >= String(prev.week)) map[r.merchant_id] = r;
+    // 去重键：优先 merchant_id；没有号的行（比如只有物料码）退回「店名|地址」，
+    // 否则整批空 id 会被当成同一条互相覆盖，只活最后一行。
+    const key = String(r.merchant_id || ("@" + r.name + "|" + r.address));
+    if (key === "@|") return;
+    const prev = map[key];
+    if (!prev || String(r.week) >= String(prev.week)) map[key] = r;
   });
   return Object.keys(map).map(function (k) { return map[k]; });
 }

@@ -211,21 +211,57 @@ https://<用户名>.github.io/knot-map/
 5. 手动跑一次验证：编辑器里选 `refreshMerged` → 执行 → 看日志里的突合统计，
    并确认存档 Sheet 里多出了 **「合并」** 和 **「待人工校对」** 两个 tab
 
-### D-3. 配 Knot agent（提示词）
+### D-3. 配 Knot agent（提示词）—— 两种接法，选一个
 
-**系统提示词**：整段复制 [`knot/agent_prompt.md`](knot/agent_prompt.md)，粘进 Knot agent 的「系统提示词」框。
+| | 场景 | 用哪个文件 | 改动量 |
+|---|---|---|---|
+| **A（推荐）** | 你**已经有一个跑数 agent**（比如「日本周度新增数据跑数助手」，出 Excel + Markdown 汇报） | [`knot/agent_prompt_addon.md`](knot/agent_prompt_addon.md) —— 整段**追加**到你现有 prompt 末尾 | 只改 1 处：推送地址 |
+| **B** | 从零建一个**只服务地图**的 agent | [`knot/agent_prompt.md`](knot/agent_prompt.md) —— 整段粘进「系统提示词」 | 改 2 处：时间口径 + 推送地址 |
+
+#### 接法 A：给现有跑数 agent 加「任务C」
+
+`agent_prompt_addon.md` 是一段**纯增量**，不碰你原有的 SQL、口径、红线、Excel 交付和 notify。
+它做的事只有一件：让 agent 在**汇报完之后**，把任务A/B 已经查出来的结果映射成固定字段，追加一个数据块：
+
+```
+<<<KNOT_JSON>>>
+{"ok":true,"week":"2026-W38","total_rows":1234,"rows":[{...}]}
+<<<END_KNOT_JSON>>>
+```
+
+**为什么用哨兵标记包住，而不是「只输出 JSON」**：你那个 agent 的主体交付是 Excel + Markdown，
+不可能只吐 JSON。哨兵标记让 GAS 能从混合正文里精准截出数据块 —— 正文里就算有 `{ }` 也不会串味。
+（`gas/test_knot_addon.js` 第 3 组用例就是测这个。）
+
+字段映射在 addon 的 C-1 表里，已经对齐了你真实 SQL 的输出列：
+
+| 契约字段 | 任务A（进件） | 任务B（物料铺设） |
+|---|---|---|
+| `merchant_id` | `smid` | `"MAT" + material_id` |
+| `name` / `address` | `store_name` / `store_address` | 同左 |
+| `category` | `已接入子商户` | `已铺设礼包或汇率` |
+| `institution` | `fmerchantname` | `mch_name` |
+| `material` | `""` | `material_type_cn` |
+| `lat` / `lng` | `""` | `""`（TDW 这两张表没坐标，下游按地址补全） |
+
+两个容易踩的坑，addon 里已经写死：
+- **任务B 的 id 必须带 `MAT` 前缀** —— 下游按 `merchant_id + week` 去重留最新，
+  物料行没有稳定唯一 id 的话，整批会互相覆盖只剩最后一行
+- **行数 > 300 要分片** —— 全日本周新增铺设约 1000-1500 码，一次性输出大概率被平台截断
+
+#### 接法 B：新建专用 agent
 
 粘之前只改两处：
-1. **时间口径** —— 默认是「上一自然周（JST）」，要改成别的就改那一句
-2. **推送地址** —— 提示词第五节的 `https://script.google.com/macros/s/____/exec?token=____`，
-   换成 D-2 拿到的 `/exec` + 你的 `WEBHOOK_TOKEN`
+1. **时间口径** —— 默认是「上一自然周（JST）」
+2. **推送地址** —— `https://script.google.com/macros/s/____/exec?token=____`，换成 D-2 拿到的 `/exec` + `WEBHOOK_TOKEN`
 
-提示词已经写死了三件事，不要改：
-- **字段契约**（`week / merchant_id / name / category / institution / material / address / lat / lng / note`）
-- **只输出 JSON**（GAS 要解析，多一个字就失败）
-- **坐标没有就留空**（下游按地址补全；填 0 会定位到几内亚湾）
+#### 两种接法共用的三条硬约束（不要改）
 
-> 你的 agent 接了数据源能直查，所以提示词里让它**自己去 schema 里找表**，不用写死 SQL。
+- **字段契约**：`week / merchant_id / name / category / institution / material / address / lat / lng / note`
+- **坐标没有就留空** —— 下游按地址补全；填 0 会定位到几内亚湾
+- **店名/地址保留日文原名** —— 下游靠「店名+地址归一化」跟踩点表匹配，翻译或缩写会直接匹配失败
+
+> 接法 B 的 agent 接了数据源能直查，所以提示词里让它**自己去 schema 里找表**，不用写死 SQL。
 > 找不到表时它会输出 `{"ok":false,"reason":...}`，你在日志里能看到，再针对性补表名。
 
 ### D-4. 接上 Knot（两条路，都配最稳）
@@ -252,7 +288,7 @@ https://<用户名>.github.io/knot-map/
 
 3. 编辑器里跑一次 `testKnotPull()` → 看执行日志：
    - `{"ok":true,"received":N,...}` = 打通了 ✅
-   - `解析不出 JSON` = agent 开始闲聊了，检查提示词「只输出 JSON」那句有没有生效
+   - `解析不出 JSON` = agent 开始闲聊了，检查提示词里哨兵块那一段有没有生效（接法 A 看 C-4，接法 B 看第四节）
    - `skipped:true` = 上面的属性没配上（属性名拼错最常见）
 4. 跑 `installWeeklyTrigger()` 装每周一 09:00 的触发器
 
@@ -325,6 +361,8 @@ colorBy: "match_status"   // both=绿 / spot-only=蓝 …按 PALETTE 顺序自�
 | 本周 Knot 数据没进来 | agent 没触发，或推/拉失败 | 编辑器跑 `testKnotPull()` 看返回；`skipped` = 属性没配，`解析不出 JSON` = 提示词没约束住输出格式 |
 | Knot agent 说找不到表 | 提示词让它自己找，但 schema 里命名不一样 | 把日志里 `reason` 的表清单粘给我，我把表名写进提示词 |
 | 地图上周次筛选是空的 | 数据里 `week` 列为空 | 提示词里已强制要求填；已进档的空 week 行需在「明细」表手工补 |
+| 本周数据比实际少一截 | 回复太长被平台截断 | `doPost` 返回里的 `partial:true` 就是截断信号。改用 HTTP 分片 POST（每片 ≤300 行 + `chunk:{i,n}`），比在回复里塞长 JSON 稳 |
+| 只有最后一条数据进了地图 | 物料行 `merchant_id` 为空，被去重互相覆盖 | 任务B 必须填 `"MAT"+material_id`；GAS 侧现在也会退回「店名\|地址」去重兜底 |
 
 ## 安全总结
 
@@ -345,7 +383,8 @@ python3 -m http.server 8123            # 起服务
 # ---- 后端（GAS 逻辑，不用部署就能跑）----
 node gas/test.js            # 存档/去重/输出 15 项
 node gas/test_pipeline.js   # 突合层 40 项（归一化/匹配/补坐标/打标）
-node gas/test_knot.js       # Knot 拉取兜底 20 项（SSE/JSON/围栏解析 + 认证头）
+node gas/test_knot.js       # Knot 拉取兜底 21 项（SSE/JSON/围栏解析 + 认证头）
+node gas/test_knot_addon.js # 现有跑数 agent 对接 24 项（哨兵块/分片/截断/无id去重）
 node gas/test_real.js       # 真实 asakusa 1598 行压测（召回率+耗时）
 node gas/make_sample.js     # 重新生成 merged_sample.csv（改完规则跑一下）
 

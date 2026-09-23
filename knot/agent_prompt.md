@@ -3,6 +3,10 @@
 > 用法：整段粘进 Knot agent 的「系统提示词」。
 > 粘之前只需改两处：**① 时间口径**（默认上一自然周）**② 推送地址**（Part D 部署 GAS 后拿到的 `/exec?token=xxx`）。
 > 其余不要改——字段契约和下游处理层是绑死的。
+>
+> **⚠️ 如果你已经有一个跑数 agent**（要出 Excel / Markdown 汇报，不能只吐 JSON），
+> 别用这份，改用 [`agent_prompt_addon.md`](agent_prompt_addon.md) —— 那段是**追加片段**，
+> 用哨兵块把 JSON 包起来，不破坏原有交付方式。
 
 ---
 
