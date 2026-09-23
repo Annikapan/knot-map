@@ -1,0 +1,18 @@
+# 秘密情報（絶対にコミットしない）
+config.js
+
+# ビルド生成物
+index.html
+
+# 検証用の一時ファイル
+smoke*.png
+data/
+data.csv
+sample.csv
+sample.xlsx
+
+# 実データ（実店舗名・住所を含む）。既定ではコミットしない。
+# 公開リポジトリにするなら必ずこのまま。
+# Private リポジトリで地図の既定データとして同梱したい場合のみ、下2行をコメントアウト。
+asakusa.csv
+merged_sample.csv

@@ -1,0 +1,600 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=5">
+<title>物料铺设マップ</title>
+<style>
+  html,body{margin:0;height:100%;font-family:-apple-system,"Hiragino Sans","Noto Sans JP",system-ui,sans-serif;color:#1f2328;background:#fff}
+  #wrap{display:flex;height:100%}
+  #panel{width:270px;flex:none;border-right:1px solid #e5e7eb;background:#fff;overflow-y:auto;padding:14px 14px 24px}
+  #map{flex:1;min-width:0}
+  h1{font-size:15px;margin:0 0 2px;font-weight:600}
+  .sub{font-size:11px;color:#6b7280;margin-bottom:12px;line-height:1.5}
+  .stat{display:flex;justify-content:space-between;font-size:12px;padding:3px 0;border-bottom:1px dashed #eef0f3}
+  .stat b{font-weight:600}
+  .sec{font-size:11px;color:#6b7280;margin:14px 0 6px;letter-spacing:.04em}
+  .lg{display:flex;align-items:center;gap:7px;padding:5px 6px;border-radius:6px;cursor:pointer;font-size:12.5px;user-select:none}
+  .lg:hover{background:#f3f4f6}
+  .lg.off{opacity:.35}
+  .dot{width:11px;height:11px;border-radius:50%;flex:none;border:1.5px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.12)}
+  .cnt{margin-left:auto;font-variant-numeric:tabular-nums;color:#6b7280;font-size:11.5px}
+  select{width:100%;font-size:12.5px;padding:5px 6px;border:1px solid #d1d5db;border-radius:6px;background:#fff;margin-bottom:2px}
+  select:disabled{background:#f9fafb;color:#9ca3af}
+  .iw{font-size:12.5px;line-height:1.6;max-width:250px}
+  .iw .nm{font-weight:600;font-size:13.5px;margin-bottom:3px}
+  .iw .kv{color:#4b5563}
+  .iw .kv span{color:#6b7280}
+  .btns{margin-top:8px;display:flex;gap:6px}
+  .btns a{font-size:11.5px;padding:4px 9px;border-radius:6px;background:#07C160;color:#fff;text-decoration:none}
+  .btns a.alt{background:#1677ff}
+  .warn{background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;font-size:11.5px;padding:7px 9px;border-radius:6px;margin-top:10px;line-height:1.5}
+  @media(max-width:720px){#wrap{flex-direction:column}#panel{width:auto;max-height:38%;border-right:0;border-bottom:1px solid #e5e7eb}#map{flex:1}}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <aside id="panel">
+    <h1>物料铺设マップ</h1>
+    <div class="sub" id="src">読み込み中…</div>
+
+    <div class="stat"><span>総件数</span><b id="s-total">–</b></div>
+    <div class="stat"><span>表示中</span><b id="s-shown">–</b></div>
+    <div class="stat"><span>座標なし（スキップ）</span><b id="s-skip">–</b></div>
+
+    <div id="baseWrap">
+      <div class="sec">ベース地図</div>
+      <select id="baseSel"></select>
+    </div>
+
+    <div class="sec">週次フィルタ</div>
+    <select id="weekSel"><option>全期間</option></select>
+
+    <div class="sec" id="srcSec">データソース（クリックで切替）</div>
+    <div id="srcList"></div>
+
+    <div class="sec">カテゴリ（クリックで切替）</div>
+    <div id="legend"></div>
+    <div id="note"></div>
+  </aside>
+  <div id="map"></div>
+</div>
+
+<!-- 秘匿設定（API キー）。config.js は .gitignore 済み → git にキーが残りません。
+     無くても動作します（Google キー無しならタイル地図に自動フォールバック）。 -->
+<script src="config.js"></script>
+
+<script>
+/* ============================================================
+   設定：ここだけ書き換えれば動きます
+   ============================================================ */
+const CONFIG = {
+  // ① Google Maps JS API キー
+  //     ★ セキュリティのため、キーはこのファイルには書かず config.js に書いてください。
+  //       config.js は .gitignore 済み → git / GitHub にキーが残りません。
+  //       この行は空のままでOK（config.js の値で上書きされます）
+  apiKey: "",
+
+  // ①-b 無キー時の既定ベース地図。既定 "gsi-pale"（国土地理院 淡色＝Googleに近い灰階・建物まで詳細）
+  //     ※ Positron(CARTO) は 2026年から API key 必須（key無しだと「API KEY REQUIRED」水印）。
+  //       使う場合は下の cartoKey に key を入れて "positron" に。
+  //     他： "gsi-ortho"（航空写真）/ "osm"（色が多い）
+  //     ★ apiKey を入れた場合は Google Maps 本体が使われ、この設定は無視されます
+  baseMap: "gsi-pale",
+
+  // ①-c CARTO Positron を使う場合の API key（任意。空欄でも現在は動作します）
+  cartoKey: "",
+
+  // ② データの在りか。3通りどれでもOK（?data=URL で上書きも可）
+  //   a) 同フォルダの CSV/JSON : "sample.csv"
+  //   b) Google Sheets を「ウェブに公開→CSV」: "https://docs.google.com/spreadsheets/d/e/XXXX/pub?output=csv"
+  //   c) Apps Script の /exec（Sheet を非公開のまま）: "https://script.google.com/macros/s/XXXX/exec"
+  dataUrl: "asakusa.csv",
+
+  // ②-b ★複数ソース★ ここに並べたものを全部まとめて1枚の地図に重ねます。
+  //       label = 凡例・切替に出る名前 / url = 上の a〜c いずれか
+  //       1つだけなら上の dataUrl だけでOK。sources を書いたら dataUrl より優先されます。
+  sources: [
+    // { label:"踩点データ（Google Sheets）", url:"https://docs.google.com/spreadsheets/d/e/XXXX/pub?output=csv" },
+    // { label:"物料激励＋子商户进件（Knot→GAS）", url:"https://script.google.com/macros/s/YYYY/exec?format=json" }
+  ],
+
+  // ③ 色分けする列名（GAS「合并」の見出しをそのまま書く）。空なら自動判定
+  //    "match_status" … both / spot-only / knot-only（踩過未铺 / 铺了未踩 が一目で分かる。推奨）
+  //    "category" … 物料铺设ステータス / "area" … 商圈 / "institution" … 服务商
+  colorBy: "match_status",
+  // ④ 既定の中心とズーム（データ読込後に自動で全景に合うので基本不要）
+  center: { lat: 35.7135, lng: 139.7975 },
+  zoom: 14,
+  // ⑤ この点数を超えたら自動でクラスタ（数字バブル）表示。0 で常にOFF
+  clusterAt: 800,
+  // ⑥ 地図の言語
+  lang: "ja"
+};
+
+/* ---- 秘匿値は config.js から読み込む（config.js は git 管理外） ---- */
+/* 空文字は「未設定」とみなし、既定値を潰さない（Secret 未設定時に 0 件になる事故を防ぐ） */
+const __SECRET = (window.MAP_SECRET || {});
+if (__SECRET.apiKey)  CONFIG.apiKey  = __SECRET.apiKey;
+if (__SECRET.dataUrl) CONFIG.dataUrl = __SECRET.dataUrl;
+if (__SECRET.colorBy) CONFIG.colorBy = __SECRET.colorBy;
+
+/* 複数ソースも Secret から渡せる（GitHub Actions では JSON 文字列になるので両方受ける） */
+function parseSources(v){
+  if (!v) return [];
+  if (Array.isArray(v)) return v.filter(s => s && s.url);
+  if (typeof v === "string"){
+    try { const j = JSON.parse(v); return (Array.isArray(j) ? j : [j]).filter(s => s && s.url); }
+    catch { return [{ label:"Secret", url:v }]; }
+  }
+  return [];
+}
+if (__SECRET.sources) CONFIG.sources = parseSources(__SECRET.sources);
+
+/* ---------------- ベース地図（Google の見た目に寄せたタイル） ---------------- */
+const BASEMAPS = {
+  "positron":  { label:"Positron（CARTO）※Googleに最接近・灰階",
+                 url:"https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
+                 attr:'&copy; OpenStreetMap contributors &copy; CARTO', native:19 },
+  "gsi-pale":  { label:"淡色地図（国土地理院）・日本の建物まで詳細",
+                 url:"https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png",
+                 attr:'&copy; 国土地理院', native:18 },
+  "gsi-ortho": { label:"航空写真（国土地理院）",
+                 url:"https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg",
+                 attr:'&copy; 国土地理院', native:18 },
+  "osm":       { label:"OSM 標準（色が多い）",
+                 url:"https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+                 attr:'&copy; OpenStreetMap contributors', native:19 }
+};
+
+/* ---------------- 列名の自動マッピング（日中英どの見出しでも拾う） ---------------- */
+const ALIAS = {
+  name:     ["name","名称","店名","商户名","商户名称","店铺名","店舗名","施設名","n","title"],
+  address:  ["address","addr","地址","住所","所在地","a"],
+  lat:      ["lat","latitude","纬度","緯度","y","ido"],
+  lng:      ["lng","lon","long","longitude","经度","経度","x","keido"],
+  category: ["category","cat","分类","分類","カテゴリ","カテゴリー","c","状态","状態","ステータス","status","type","種別"],
+  week:     ["week","周次","週","週次","w","批次","バッチ","date","日期","更新日"]
+};
+const low = s => String(s||"").trim().toLowerCase().replace(/[\s_（）()]/g,"");
+function mapCols(headers){
+  const m = {};
+  headers.forEach((h,i)=>{
+    const k = low(h);
+    for (const key in ALIAS) if (!m[key] && ALIAS[key].includes(k)) m[key] = i;
+  });
+  // 座標が取れない場合は「lat/lng」を含む列を探す最終手段
+  // ※ findIndex は見つからないと -1 を返すため undefined に正規化する（しないと後段の
+  //   「列が無い」判定が効かず、座標ゼロ件が黙って発生する）
+  const findCol = re => { const i = headers.findIndex(h=>re.test(low(h))); return i < 0 ? undefined : i; };
+  if (m.lat === undefined) m.lat = findCol(/lat|緯度|纬度|latitude/);
+  if (m.lng === undefined) m.lng = findCol(/lng|lon|long|経度|经度|longitude/);
+  return m;
+}
+const PALETTE = ["#07C160","#1677ff","#f59e0b","#8b5cf6","#ef4444","#06b6d4","#db2777","#65a30d","#475569","#a16207"];
+const colorOf = (v, i) => PALETTE[i % PALETTE.length];
+
+/* ---------------- 読み込み ---------------- */
+const qs = new URLSearchParams(location.search);
+const DATA_URL = qs.get("data") || CONFIG.dataUrl;
+
+/* 読み込むソース一覧（sources があれば複数、無ければ dataUrl 1本） */
+function resolveSources(){
+  if (qs.get("data")) return [{ label:"?data=", url: qs.get("data") }];   // デバッグ用：URL指定を最優先
+  // ?sources=[{"label":"A","url":"a.csv"},...] も可（テストや一時的な比較に便利。config.js を書き換えずに済む）
+  const qsrc = qs.get("sources");
+  if (qsrc){
+    const list = parseSources(qsrc).map((s,i)=>({ label: s.label || ("ソース" + (i+1)), url: s.url }));
+    if (list.length) return list;
+  }
+  const list = (CONFIG.sources && CONFIG.sources.length)
+    ? CONFIG.sources.map((s,i)=>({ label: s.label || ("ソース" + (i+1)), url: s.url }))
+    : [{ label:"既定", url: DATA_URL }];
+  return list.filter(s => s.url);
+}
+const SOURCES = resolveSources();
+
+function parseCSV(text){
+  text = text.replace(/^\uFEFF/,"");
+  const rows = []; let row = [], cur = "", q = false;
+  for (let i=0;i<text.length;i++){
+    const ch = text[i];
+    if (q){
+      if (ch === '"'){ if (text[i+1] === '"'){ cur += '"'; i++; } else q = false; }
+      else cur += ch;
+    } else {
+      if (ch === '"') q = true;
+      else if (ch === ","){ row.push(cur); cur = ""; }
+      else if (ch === "\n"){ row.push(cur); rows.push(row); row = []; cur = ""; }
+      else if (ch !== "\r") cur += ch;
+    }
+  }
+  if (cur !== "" || row.length){ row.push(cur); rows.push(row); }
+  return rows.filter(r => r.some(c => c.trim() !== ""));
+}
+
+async function loadRows(url){
+  url = (url || DATA_URL);
+  const res = await fetch(url + (url.includes("?") ? "&" : "?") + "_t=" + Date.now(), {cache:"no-store"});
+  if (!res.ok) throw new Error("HTTP " + res.status);
+  const url0 = url.split("?")[0];
+  if (/\.json($|\?)|macros\/s\//i.test(url) || res.headers.get("content-type")?.includes("json")){
+    const j = await res.json();
+    return Array.isArray(j) ? j : (j.rows || j.data || j.items || []);
+  }
+  const txt = await res.text();
+  // xlsx は ZIP（先頭が PK）。そのまま読むと文字化けした挙句「座標列が無い」と誤判定するので先に止める
+  if (/^PK/.test(txt))
+    throw new Error("読み込んだのは Excel(.xlsx) ファイルです。ブラウザは xlsx を直接読めません。" +
+                    "「名前を付けて保存」で CSV(UTF-8) にするか、GAS の /exec?format=json を dataUrl に指定してください。");
+  const grid = parseCSV(txt);
+  if (!grid.length) return [];
+  const head = grid[0].map(h => String(h).trim());
+  return grid.slice(1).map(r => { const o = {}; head.forEach((h,i)=> o[h] = (r[i] ?? "").trim()); return o; });
+}
+
+/* ---------------- 正規化 ---------------- */
+function normalize(raw, srcName){
+  if (!raw.length) return [];
+  const headers = Object.keys(raw[0]);
+  const c = mapCols(headers);
+  if (c.lat === undefined || c.lng === undefined) throw new Error("緯度/経度の列が見つかりません（見出し: " + headers.join(" / ") + "）");
+  // ★ colorBy で指定された列が「実際の色分け」に使われるように、列インデックスまで落とす
+  //   （以前は colorKey を画面表示にしか使っておらず、色分けは常に category 列のままだった）
+  const colorKey = CONFIG.colorBy && headers.includes(CONFIG.colorBy) ? CONFIG.colorBy : "";
+  const colorIdx = colorKey ? headers.indexOf(colorKey) : c.category;
+  const out = []; let skipped = 0;
+  raw.forEach(o => {
+    const vals = headers.map(h => o[h]);
+    const lat = parseFloat(vals[c.lat]), lng = parseFloat(vals[c.lng]);
+    if (!isFinite(lat) || !isFinite(lng) || (lat === 0 && lng === 0)) { skipped++; return; }
+    // 分類列が無い時はソース名で色分けする（複数ソースが全部「未分類」に潰れるのを防ぐ）
+    let cat = String(vals[colorIdx] ?? "未分類").trim() || "未分類";
+    if (!colorKey && srcName && SOURCES.length > 1) cat = srcName;
+    const extras = {};
+    headers.forEach((h,i)=>{
+      if (i === colorIdx) return;                       // 色分け列は extras に重複表示しない
+      if (!Object.values(c).includes(i) && String(o[h]||"").trim() !== "") extras[h] = o[h];
+    });
+    out.push({
+      name: String(vals[c.name] ?? "(名称なし)").trim() || "(名称なし)",
+      address: String(vals[c.address] ?? "").trim(),
+      lat, lng, cat,
+      src: srcName || "",
+      week: c.week !== undefined ? String(vals[c.week] ?? "").trim() : "",
+      extras
+    });
+  });
+  skippedCount += skipped;                    // 複数ソースは合算する
+  colorColumn = colorKey || (c.category !== undefined ? headers[c.category] : "") ||
+                (SOURCES.length > 1 ? "ソース" : "カテゴリ");
+  return out;
+}
+
+/* ---------------- 複数ソースをまとめて読む ---------------- */
+/* 1つが壊れても他は生かす（失敗したソースは警告として残す） */
+const SRC_STATUS = [];
+async function loadAllRows(){
+  skippedCount = 0;
+  const jobs = SOURCES.map(async s => {
+    try {
+      const raw = await loadRows(s.url);
+      const rows = normalize(raw, s.label);
+      SRC_STATUS.push({ label:s.label, ok:true, n:rows.length });
+      return rows;
+    } catch (e){
+      SRC_STATUS.push({ label:s.label, ok:false, n:0, err:e.message });
+      return [];
+    }
+  });
+  const parts = await Promise.all(jobs);
+  const all = parts.flat();
+  if (!all.length){
+    const bad = SRC_STATUS.filter(s=>!s.ok).map(s=>`${s.label}: ${s.err}`).join(" / ");
+    throw new Error(bad || "0件でした（CSVの見出し行・URLを確認してください）");
+  }
+  return all;
+}
+
+let ROWS = [], skippedCount = 0, colorColumn = "";
+const CATS = new Map();
+let activeCats = new Set(), activeWeek = "__ALL__", activeSrcs = new Set();
+let gmap = null, lmap = null, markers = [], infoW = null, cluster = null, lcluster = null, baseLayer = null;
+
+/* Leaflet + markercluster を順番に読み込む（markercluster は L 依存のため直列） */
+function addTag(tag, attrs){
+  return new Promise(res=>{
+    const e = document.createElement(tag);
+    Object.entries(attrs).forEach(([k,v])=>{ e[k] = v; });
+    e.onload = res; e.onerror = res;
+    document.head.appendChild(e);
+  });
+}
+async function loadLeafletStack(){
+  addTag("link",{rel:"stylesheet",href:"https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"});
+  addTag("link",{rel:"stylesheet",href:"https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css"});
+  addTag("link",{rel:"stylesheet",href:"https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css"});
+  await addTag("script",{src:"https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"});
+  await addTag("script",{src:"https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"});
+}
+
+/* ---------------- ピン ---------------- */
+const PIN = "M 0,0 C -2.2,-3.2 -7,-8 -7,-12 A 7,7 0 1,1 7,-12 C 7,-8 2.2,-3.2 0,0 z";
+
+function render(){
+  const vis = ROWS.filter(r => activeCats.has(r.cat) && activeSrcs.has(r.src)
+                          && (activeWeek === "__ALL__" || r.week === activeWeek));
+  document.getElementById("s-total").textContent = ROWS.length.toLocaleString();
+  document.getElementById("s-shown").textContent = vis.length.toLocaleString();
+  document.getElementById("s-skip").textContent  = skippedCount.toLocaleString();
+
+  // 既存をクリア
+  if (cluster){ cluster.clearMarkers(); cluster = null; }
+  if (lcluster){ if (lmap) lmap.removeLayer(lcluster); lcluster = null; }
+  markers.forEach(m => { if (m.setMap) m.setMap(null); else if (lmap) lmap.removeLayer(m); });
+  markers = [];
+
+  const wantCluster = CONFIG.clusterAt > 0 && vis.length > CONFIG.clusterAt;
+  const useCluster  = wantCluster && gmap && window.markerClusterer;
+  const useClusterL = wantCluster && lmap && window.L && L.markerClusterGroup;
+
+  vis.forEach(r => {
+    const color = CATS.get(r.cat).color;
+    const lines = [
+      `<div class="nm">${esc(r.name)}</div>`,
+      r.address ? `<div class="kv">${esc(r.address)}</div>` : "",
+      (SOURCES.length > 1 && r.src) ? `<div class="kv"><span>ソース：</span>${esc(r.src)}</div>` : "",
+      `<div class="kv"><span>${esc(colorColumn)}：</span>${esc(r.cat)}</div>`,
+      r.week ? `<div class="kv"><span>週次：</span>${esc(r.week)}</div>` : "",
+      Object.entries(r.extras).map(([k,v])=>`<div class="kv"><span>${esc(k)}：</span>${esc(v)}</div>`).join(""),
+      `<div class="btns">
+         <a href="https://www.google.com/maps/search/?api=1&query=${r.lat},${r.lng}" target="_blank" rel="noopener">Googleマップで開く</a>
+         <a class="alt" href="https://www.google.com/maps/dir/?api=1&destination=${r.lat},${r.lng}&travelmode=walking" target="_blank" rel="noopener">経路</a>
+       </div>`
+    ].join("");
+
+    if (gmap){
+      const mk = new google.maps.Marker({
+        position:{lat:r.lat,lng:r.lng}, title:r.name,
+        icon:{ path: PIN, fillColor: color, fillOpacity:0.95, strokeColor:"#ffffff", strokeWeight:1.6,
+               scale:1.05, anchor:new google.maps.Point(0,0), labelOrigin:new google.maps.Point(0,-13) },
+        optimized: !useCluster
+      });
+      mk.addListener("click", ()=>{ infoW.setContent(lines); infoW.open({anchor:mk, map:gmap}); });
+      markers.push(mk);
+    } else if (lmap){
+      const cm = L.circleMarker([r.lat,r.lng], {radius:6, color:"#fff", weight:1.5, fillColor:color, fillOpacity:0.95});
+      cm.bindPopup(lines);
+      markers.push(cm);
+    }
+  });
+
+  if (gmap){
+    if (useCluster && window.markerClusterer){
+      cluster = new markerClusterer.MarkerClusterer({ map: gmap, markers,
+        renderer:{ render:({count,position})=> new google.maps.Marker({ position,
+          icon:{ path: google.maps.SymbolPath.CIRCLE, scale: Math.min(30, 13 + Math.log2(count)*2.4),
+                 fillColor:"#07C160", fillOpacity:.85, strokeColor:"#fff", strokeWeight:2 },
+          label:{ text:String(count), color:"#fff", fontSize:"11px", fontWeight:"600" },
+          zIndex: Number(google.maps.Marker.MAX_ZINDEX) + count })}});
+    } else {
+      markers.forEach(m => m.setMap(gmap));
+    }
+    if (vis.length){
+      const b = new google.maps.LatLngBounds();
+      vis.forEach(r => b.extend({lat:r.lat,lng:r.lng}));
+      gmap.fitBounds(b, 60);
+    }
+  } else if (lmap && vis.length){
+    if (useClusterL){
+      lcluster = L.markerClusterGroup({
+        chunkedLoading: true, maxClusterRadius: 55, showCoverageOnHover: false,
+        iconCreateFunction: c=>{
+          const n = c.getChildCount();
+          const d = n < 10 ? 32 : n < 100 ? 38 : n < 500 ? 46 : 54;
+          return L.divIcon({ className:"wcp-cl", iconSize:L.point(d,d),
+            html:`<div style="width:${d}px;height:${d}px;border-radius:50%;background:#07C160cc;border:2px solid #fff;color:#fff;font:600 ${Math.round(d*0.36)}px/1 system-ui,sans-serif;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 4px rgba(0,0,0,.25)">${n}</div>` });
+        }
+      });
+      markers.forEach(m => lcluster.addLayer(m));
+      lmap.addLayer(lcluster);
+    } else {
+      markers.forEach(m => m.addTo(lmap));
+    }
+    lmap.fitBounds(L.latLngBounds(vis.map(r=>[r.lat,r.lng])).pad(0.15));
+  }
+}
+
+function esc(s){ return String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+
+/* ---------------- 凡例・フィルタ ---------------- */
+function buildUI(){
+  const cats = [...new Set(ROWS.map(r=>r.cat))].sort((a,b)=>
+    ROWS.filter(r=>r.cat===b).length - ROWS.filter(r=>r.cat===a).length);
+  cats.forEach((c,i)=> CATS.set(c, {color: colorOf(c,i), n: ROWS.filter(r=>r.cat===c).length}));
+  activeCats = new Set(cats);
+
+  /* ---- データソース切替（複数ソース時だけ表示） ---- */
+  const srcNames = [...new Set(ROWS.map(r=>r.src).filter(Boolean))];
+  activeSrcs = new Set(srcNames.length ? srcNames : ROWS.map(()=>""));
+  if (srcNames.length > 1){
+    document.getElementById("srcList").innerHTML = SRC_STATUS.map(s=>{
+      const n = ROWS.filter(r=>r.src===s.label).length;
+      const dot = s.ok ? "#07C160" : "#ef4444";
+      const t   = s.ok ? `${n.toLocaleString()}件` : `失敗`;
+      return `<div class="lg" data-s="${esc(s.label)}" title="${esc(s.err||"")}"><span class="dot" style="background:${dot}"></span><span>${esc(s.label)}</span><span class="cnt">${t}</span></div>`;
+    }).join("");
+    document.querySelectorAll("#srcList .lg").forEach(el=> el.onclick = ()=>{
+      const s = el.dataset.s;
+      if (activeSrcs.has(s) && activeSrcs.size > 1){ activeSrcs.delete(s); el.classList.add("off"); }
+      else { activeSrcs.add(s); el.classList.remove("off"); }
+      render();
+    });
+  } else {
+    document.getElementById("srcSec").style.display = "none";
+    document.getElementById("srcList").style.display = "none";
+  }
+
+  document.getElementById("legend").innerHTML = cats.map(c=>{
+    const m = CATS.get(c);
+    return `<div class="lg" data-c="${esc(c)}"><span class="dot" style="background:${m.color}"></span><span>${esc(c)}</span><span class="cnt">${m.n}</span></div>`;
+  }).join("");
+  // ※ ".lg" だと #srcList の行まで掴んで上書きしてしまうので "#legend .lg" に限定する
+  document.querySelectorAll("#legend .lg").forEach(el=> el.onclick = ()=>{
+    const c = el.dataset.c;
+    if (activeCats.has(c) && activeCats.size > 1){ activeCats.delete(c); el.classList.add("off"); }
+    else { activeCats.add(c); el.classList.remove("off"); }
+    render();
+  });
+
+  const weeks = [...new Set(ROWS.map(r=>r.week).filter(Boolean))].sort().reverse();
+  const sel = document.getElementById("weekSel");
+  if (weeks.length > 1){
+    sel.innerHTML = `<option value="__ALL__">全期間（${ROWS.length}件）</option>` +
+      weeks.map(w=>`<option value="${esc(w)}">${esc(w)}（${ROWS.filter(r=>r.week===w).length}件）</option>`).join("");
+    sel.onchange = e => { activeWeek = e.target.value; render(); };
+  } else { sel.disabled = true; sel.innerHTML = `<option>週次の列なし／1週のみ</option>`; }
+
+  const okN = SRC_STATUS.filter(s=>s.ok).length;
+  document.getElementById("src").innerHTML =
+    `出典：<span style="color:#374151">${okN} / ${SRC_STATUS.length} ソース</span>` +
+    (SRC_STATUS.length > 1 ? `<br>${SRC_STATUS.map(s=>`<span style="color:${s.ok?"#374151":"#b91c1c"}">${esc(s.label)}：${s.ok?s.n+"件":"失敗"}</span>`).join("<br>")}` : "") +
+    `<br>色分け：<b>${esc(colorColumn)}</b>`;
+
+  const note = document.getElementById("note");
+  note.innerHTML = skippedCount
+    ? `<div class="warn">${skippedCount}行は緯度経度が無いためスキップしました。<br>Geocoding API で座標を補完してから再読込してください。</div>`
+    : (CONFIG.clusterAt > 0 && ROWS.length > CONFIG.clusterAt
+        ? `<div class="warn">${ROWS.length.toLocaleString()}件：クラスタ表示中。ズームインすると個別ピンに分解されます。</div>` : "");
+}
+
+/* ---------------- 起動 ---------------- */
+function bootMap(){
+  // __forceTiles: Google のスクリプト自体は読まれても地図が使えない時はタイル側へ固定する
+  if (!__forceTiles && window.google && window.google.maps){
+    infoW = new google.maps.InfoWindow();
+    gmap = new google.maps.Map(document.getElementById("map"), {
+      center: CONFIG.center, zoom: CONFIG.zoom, gestureHandling:"greedy",
+      mapTypeControl:true, mapTypeId:"roadmap", streetViewControl:true, fullscreenControl:true,
+      styles:[{featureType:"poi.business",stylers:[{visibility:"simplified"}]}]
+    });
+    watchGoogleFailure();
+  } else {
+    // maxZoom 20 まで拡大可（タイルは native まで。以降は Leaflet が引き伸ばす）
+    lmap = L.map("map", {zoomControl:true, maxZoom:20})
+             .setView([CONFIG.center.lat, CONFIG.center.lng], CONFIG.zoom);
+    baseLayer = makeBase(CONFIG.baseMap).addTo(lmap);
+    buildBaseSel();
+  }
+  render();
+}
+
+function makeBase(key){
+  const b = BASEMAPS[key] || BASEMAPS["gsi-pale"];
+  let url = b.url;
+  if (key === "positron" && CONFIG.cartoKey) url += "?apikey=" + encodeURIComponent(CONFIG.cartoKey);
+  return L.tileLayer(url, { attribution:b.attr, maxZoom:20, maxNativeZoom:b.native });
+}
+
+function setBaseMap(key){
+  CONFIG.baseMap = key;
+  if (!lmap) return;
+  if (baseLayer) lmap.removeLayer(baseLayer);
+  baseLayer = makeBase(key).addTo(lmap);
+}
+
+function buildBaseSel(){
+  const wrap = document.getElementById("baseWrap");
+  const sel  = document.getElementById("baseSel");
+  if (!sel || !wrap) return;
+  // Google モードでは Google 本体の地図切替（mapTypeControl）があるので自前 UI は隠す
+  if (gmap){ wrap.style.display = "none"; return; }
+  sel.innerHTML = Object.entries(BASEMAPS)
+    .map(([k,v])=>`<option value="${k}"${k===CONFIG.baseMap?" selected":""}>${v.label}</option>`).join("");
+  sel.onchange = e => setBaseMap(e.target.value);
+}
+
+function initMap(){ if (!gmap && !lmap) bootMap(); }
+
+/* Google Maps が使えない時の保険：タイル地図へ自動で切り替える */
+let __fellBack = false, __forceTiles = false;
+function fallbackToTiles(reason){
+  if (__fellBack || gmap) return;
+  __fellBack = true; __forceTiles = true;
+  const n = document.getElementById("note");
+  if (n) n.innerHTML = `<span style="color:#b45309">Google Maps を読み込めませんでした（${esc(reason)}）。タイル地図で表示します。</span>`;
+  // Google が描いたエラー画面の残骸を消してから Leaflet を作る
+  const el = document.getElementById("map");
+  el.innerHTML = "";
+  loadLeafletStack().then(()=>{ lmap = null; bootMap(); })
+    .catch(()=>{ if(n) n.innerHTML = `<span style="color:#b91c1c">地図の初期化に失敗しました。</span>`; });
+}
+
+/* Google 公式の認証失敗フック（呼ばれないケースがあるので下記も併用） */
+window.gm_authFailure = function(){
+  gmap = null;
+  fallbackToTiles("API キーが無効、または referrer 制限・API 制限で拒否されました");
+};
+
+/* ------------------------------------------------------------
+   Google は キー不正 / referrer 拒否 のとき gm_authFailure を呼ばず、
+   灰色の「エラーが発生しました」画面を出すだけになる（実測）。
+   灰色画面で終わらせないため、次の2経路で検知してタイル地図へ退避する。
+     ① console.error に出る Google のエラーコードを捕まえる（即時）
+     ② .gm-err-container の描画をポーリングで監視（最大 8 秒）
+   ------------------------------------------------------------ */
+const GM_ERR = /InvalidKeyMapError|RefererNotAllowedMapError|ApiNotActivatedMapError|ExpiredKeyMapError|MissingKeyMapError|ProjectDeniedMapError/i;
+let __gmErrHooked = false;
+function watchGoogleFailure(){
+  if (__gmErrHooked) return;
+  __gmErrHooked = true;
+
+  const origErr = console.error;
+  console.error = function(...a){
+    const s = a.map(x => (typeof x === "string" ? x : "")).join(" ");
+    if (GM_ERR.test(s)){ gmap = null; fallbackToTiles(s.slice(0, 80)); }
+    return origErr.apply(this, a);
+  };
+
+  let n = 0;
+  const t = setInterval(()=>{
+    n++;
+    if (!gmap){ clearInterval(t); return; }              // 既に退避済み
+    if (document.querySelector("#map .gm-err-container")){
+      clearInterval(t); gmap = null;
+      fallbackToTiles("Google Maps がエラー画面を返しました（API キー不正 / referrer 制限 / API 未許可）");
+    } else if (n > 26){                                   // 約 8 秒で打ち切り
+      clearInterval(t);
+    }
+  }, 300);
+}
+
+(async function main(){
+  try {
+    ROWS = await loadAllRows();
+    buildUI();
+    const bad = SRC_STATUS.filter(s=>!s.ok);
+    if (bad.length) document.getElementById("note").innerHTML =
+      `<div class="warn">${bad.length}件のソースが読めませんでした：<br>${bad.map(s=>`・${esc(s.label)}（${esc(s.err)}）`).join("<br>")}</div>`;
+  } catch (e){
+    document.getElementById("src").innerHTML =
+      `<span style="color:#b91c1c">読込失敗：${esc(e.message)}</span><br>CONFIG.sources / dataUrl か、CSV の見出し行を確認してください。`;
+    console.error(e);
+  }
+
+  if (CONFIG.apiKey){
+    const s = document.createElement("script");
+    s.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(CONFIG.apiKey)}&v=weekly&language=${CONFIG.lang}&region=JP&callback=initMap`;
+    s.async = true;
+    s.onerror = ()=> fallbackToTiles("スクリプトの読込エラー／ネットワーク遮断");
+    document.head.appendChild(s);
+    // 10 秒待っても初期化されなければタイル地図へ（白画面を防ぐ）
+    setTimeout(()=>{ if (!gmap && !lmap) fallbackToTiles("応答なし（10秒タイムアウト）"); }, 10000);
+  } else {
+    loadLeafletStack().then(()=>{ lmap = null; bootMap(); });
+  }
+})();
+</script>
+<script src="https://unpkg.com/@googlemaps/markerclusterer@2.5.3/dist/index.min.js" async></script>
+</body>
+</html>

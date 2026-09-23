@@ -1,0 +1,85 @@
+name: Deploy map to GitHub Pages
+
+on:
+  push:
+    branches: [ main ]
+  # 毎週月曜 09:00 JST（= 00:00 UTC）に自動再構築
+  schedule:
+    - cron: "0 0 * * 1"
+  workflow_dispatch:      # 手動実行ボタン
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # ★ API キー / データソースURL は GitHub Secrets から注入する。リポジトリには一切残りません。
+      #   MAP_SOURCES は JSON 文字列：
+      #   [{"label":"踩点データ","url":"https://docs.google.com/.../pub?output=csv"},
+      #    {"label":"物料激励","url":"https://script.google.com/macros/s/.../exec?format=json"}]
+      - name: Generate config.js from Secrets
+        env:
+          API_KEY:  ${{ secrets.MAPS_API_KEY }}
+          SOURCES: ${{ secrets.MAP_SOURCES }}
+          DATA_URL: ${{ secrets.DATA_URL }}
+          COLOR_BY: ${{ secrets.MAP_COLOR_BY }}
+        # ※ sed で置換すると URL 内の "&"（sed では「一致全体」の意味）が壊れるため Python で生成する
+        run: |
+          python3 - <<'PY'
+          import json, os
+          raw = (os.environ.get("SOURCES") or "").strip()
+          try:
+              sources = json.loads(raw) if raw else []
+          except Exception:
+              print("WARN: MAP_SOURCES is not valid JSON, fallback to []")
+              sources = []
+          cfg = {
+              "apiKey":  os.environ.get("API_KEY", ""),
+              "sources": sources,
+              "dataUrl": os.environ.get("DATA_URL", ""),
+              "colorBy": os.environ.get("COLOR_BY") or "match_status",
+          }
+          with open("config.js", "w", encoding="utf-8") as f:
+              f.write("window.MAP_SECRET = " + json.dumps(cfg, ensure_ascii=False) + ";\n")
+          print("config.js generated, sources =", len(sources))
+          PY
+
+      # データ自動更新（任意）：公開CSVのURLを Secret に入れておくと毎週取り直す
+      - name: Refresh data CSV (optional)
+        env:
+          DATA_CSV_URL: ${{ secrets.DATA_CSV_URL }}
+        run: |
+          if [ -n "${DATA_CSV_URL}" ]; then
+            curl -sSL "${DATA_CSV_URL}" -o asakusa.csv
+            echo "rows: $(wc -l < asakusa.csv)"
+          else
+            echo "DATA_CSV_URL not set - use CSV in repo"
+          fi
+
+      - name: Build page
+        run: cp points.html index.html
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

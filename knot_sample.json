@@ -1,0 +1,19 @@
+{
+  "ok": true,
+  "total": 12,
+  "updated": "2026-09-23T00:00:00.000Z",
+  "rows": [
+    { "week": "2026-W38", "merchant_id": "M0001", "name": "浅草寺前 土産店A", "category": "已铺设礼包或汇率", "institution": "OS", "material": "礼包物料", "address": "東京都台東区浅草1-1-1", "lat": 35.7148, "lng": 139.7967, "note": "" },
+    { "week": "2026-W38", "merchant_id": "M0002", "name": "仲見世通り 菓子店B", "category": "已铺设礼包或汇率", "institution": "Tierra", "material": "汇率物料", "address": "東京都台東区浅草1-20-1", "lat": 35.7132, "lng": 139.7955, "note": "" },
+    { "week": "2026-W38", "merchant_id": "M0003", "name": "雷門前 飲食店C", "category": "已接入子商户", "institution": "IMPREX", "material": "", "address": "東京都台東区浅草2-3-4", "lat": 35.7105, "lng": 139.7942, "note": "子商户进件" },
+    { "week": "2026-W38", "merchant_id": "M0004", "name": "浅草駅前 薬妆店D", "category": "已铺设PP logo或菊花码", "institution": "LIAN", "material": "PP logo", "address": "東京都台東区浅草1-5-6", "lat": 35.7121, "lng": 139.7988, "note": "" },
+    { "week": "2026-W38", "merchant_id": "M0005", "name": "花やしき前 土産店E", "category": "已铺设礼包或汇率", "institution": "OS", "material": "礼包物料", "address": "東京都台東区浅草2-28-1", "lat": 35.7156, "lng": 139.7952, "note": "" },
+    { "week": "2026-W38", "merchant_id": "M0006", "name": "浅草ROX 飲食F", "category": "已接入子商户", "institution": "Spring rea", "material": "", "address": "東京都台東区浅草1-25-15", "lat": 35.7163, "lng": 139.7979, "note": "子商户进件" },
+    { "week": "2026-W39", "merchant_id": "M0007", "name": "合羽橋 道具店G", "category": "已铺设礼包或汇率", "institution": "Tierra", "material": "汇率物料", "address": "東京都台東区西浅草3-18-2", "lat": 35.7098, "lng": 139.7901, "note": "" },
+    { "week": "2026-W39", "merchant_id": "M0008", "name": "浅草橋 雑貨店H", "category": "已接入子商户", "institution": "IMPREX", "material": "", "address": "東京都台東区浅草橋1-2-3", "lat": 35.7081, "lng": 139.7866, "note": "子商户进件" },
+    { "week": "2026-W39", "merchant_id": "M0009", "name": "田原町 カフェI", "category": "已铺设PP logo或菊花码", "institution": "OS", "material": "菊花码", "address": "東京都台東区雷門2-4-5", "lat": 35.7109, "lng": 139.7913, "note": "" },
+    { "week": "2026-W39", "merchant_id": "M0010", "name": "蔵前 雑貨J", "category": "已铺设礼包或汇率", "institution": "LIAN", "material": "礼包物料", "address": "東京都台東区蔵前2-6-7", "lat": 35.7064, "lng": 139.7891, "note": "" },
+    { "week": "2026-W39", "merchant_id": "M0011", "name": "浅草国際通り 土産K", "category": "PP商户", "institution": "OS", "material": "PP logo", "address": "東京都台東区浅草1-15-8", "lat": 35.7139, "lng": 139.7938, "note": "" },
+    { "week": "2026-W39", "merchant_id": "M0012", "name": "田原町駅 飲食L", "category": "已接入子商户", "institution": "Tierra", "material": "", "address": "東京都台東区寿3-9-10", "lat": 35.7092, "lng": 139.7884, "note": "子商户进件" }
+  ]
+}

@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=5">
+<title>物料铺设マップ</title>
+<style>
+  html,body{margin:0;height:100%;font-family:-apple-system,"Hiragino Sans","Noto Sans JP",system-ui,sans-serif;color:#1f2328;background:#fff}
+  #wrap{display:flex;height:100%}
+  #panel{width:270px;flex:none;border-right:1px solid #e5e7eb;overflow-y:auto;padding:14px 14px 24px;background:#fff}
+  #map{flex:1;min-width:0}
+  h1{font-size:15px;margin:0 0 2px;font-weight:600}
+  .sub{font-size:11px;color:#6b7280;margin-bottom:12px;line-height:1.5}
+  .stat{display:flex;justify-content:space-between;font-size:12px;padding:3px 0;border-bottom:1px dashed #eef0f3}
+  .stat b{font-weight:600}
+  .sec{font-size:11px;color:#6b7280;margin:14px 0 6px;letter-spacing:.04em}
+  .lg{display:flex;align-items:center;gap:7px;padding:5px 6px;border-radius:6px;cursor:pointer;font-size:12.5px;user-select:none}
+  .lg:hover{background:#f3f4f6}
+  .lg.off{opacity:.35}
+  .dot{width:11px;height:11px;border-radius:50%;flex:none;border:1.5px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.12)}
+  .cnt{margin-left:auto;font-variant-numeric:tabular-nums;color:#6b7280;font-size:11.5px}
+  select{width:100%;font-size:12.5px;padding:5px 6px;border:1px solid #d1d5db;border-radius:6px;background:#fff}
+  .iw{font-size:12.5px;line-height:1.6;max-width:250px}
+  .iw .nm{font-weight:600;font-size:13.5px;margin-bottom:3px}
+  .iw .kv{color:#4b5563}
+  .iw .kv span{color:#6b7280}
+  .btns{margin-top:8px;display:flex;gap:6px}
+  .btns a{font-size:11.5px;padding:4px 9px;border-radius:6px;background:#07C160;color:#fff;text-decoration:none}
+  .btns a.alt{background:#1677ff}
+  .msg{font-size:12px;color:#6b7280;padding:10px 0}
+  .err{color:#b91c1c}
+  @media(max-width:720px){#wrap{flex-direction:column}#panel{width:auto;max-height:38%;border-right:0;border-bottom:1px solid #e5e7eb}}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <aside id="panel">
+    <h1>物料铺设マップ</h1>
+    <div class="sub">Google スプレッドシート「明细」<br>Apps Script 経由で自動読込</div>
+    <div class="stat"><span>総件数</span><b id="s-total">–</b></div>
+    <div class="stat"><span>表示中</span><b id="s-shown">–</b></div>
+    <div class="stat"><span>座標なし</span><b id="s-skip">–</b></div>
+    <div class="sec">週次フィルタ</div>
+    <select id="weekSel"><option>全期間</option></select>
+    <div class="sec">カテゴリ（クリックで切替）</div>
+    <div id="legend"></div>
+    <div id="msg" class="msg">読み込み中…</div>
+  </aside>
+  <div id="map"></div>
+</div>
+
+<script>
+const API_KEY = "<?= apiKey ?>";   /* Code.gs のスクリプト プロパティ MAPS_API_KEY */
+const CLUSTER_AT = 800;            /* この件数を超えたらクラスタ表示。0 で常にOFF */
+let ROWS = [], CATS = new Map(), active = new Set(), activeWeek = "__ALL__";
+let gmap = null, markers = [], infoW = null, cluster = null, skipped = 0;
+const PALETTE = ["#07C160","#1677ff","#f59e0b","#8b5cf6","#ef4444","#06b6d4","#db2777","#65a30d","#475569","#a16207"];
+const esc = s => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const PIN = "M 0,0 C -2.2,-3.2 -7,-8 -7,-12 A 7,7 0 1,1 7,-12 C 7,-8 2.2,-3.2 0,0 z";
+
+/* GAS からデータを受け取る（Sheet は非公開のままでOK） */
+google.script.run
+  .withSuccessHandler(onData)
+  .withFailureHandler(err => { document.getElementById("msg").innerHTML =
+      '<span class="err">読込失敗：' + esc(err.message) + '</span>'; })
+  .getPoints();
+
+function onData(list){
+  skipped = list.skipped || 0;
+  ROWS = (list.rows || []).map(r => ({
+    name: r.name || "(名称なし)",
+    address: r.address || "",
+    lat: parseFloat(r.lat), lng: parseFloat(r.lng),
+    cat: String(r.category || "未分類"),
+    week: String(r.week || ""),
+    extras: { "服务商": r.institution, "物料": r.material, "备注": r.note, "商户ID": r.merchant_id }
+  })).filter(r => isFinite(r.lat) && isFinite(r.lng) && !(r.lat === 0 && r.lng === 0));
+
+  if (!ROWS.length){
+    document.getElementById("msg").innerHTML = '<span class="err">表示できる行がありません（緯度経度を確認）</span>';
+    return;
+  }
+  document.getElementById("msg").textContent = "";
+  buildUI();
+  loadMap();
+}
+
+function buildUI(){
+  const cats = [...new Set(ROWS.map(r => r.cat))].sort((a,b) =>
+    ROWS.filter(r => r.cat === b).length - ROWS.filter(r => r.cat === a).length);
+  cats.forEach((c,i) => CATS.set(c, { color: PALETTE[i % PALETTE.length], n: ROWS.filter(r => r.cat === c).length }));
+  active = new Set(cats);
+
+  document.getElementById("legend").innerHTML = cats.map(c => {
+    const m = CATS.get(c);
+    return '<div class="lg" data-c="' + esc(c) + '"><span class="dot" style="background:' + m.color + '"></span>' +
+           '<span>' + esc(c) + '</span><span class="cnt">' + m.n + '</span></div>';
+  }).join("");
+  document.querySelectorAll(".lg").forEach(el => el.onclick = () => {
+    const c = el.dataset.c;
+    if (active.has(c) && active.size > 1){ active.delete(c); el.classList.add("off"); }
+    else { active.add(c); el.classList.remove("off"); }
+    render();
+  });
+
+  const weeks = [...new Set(ROWS.map(r => r.week).filter(Boolean))].sort().reverse();
+  const sel = document.getElementById("weekSel");
+  if (weeks.length > 1){
+    sel.innerHTML = '<option value="__ALL__">全期間（' + ROWS.length + '件）</option>' +
+      weeks.map(w => '<option value="' + esc(w) + '">' + esc(w) + '（' + ROWS.filter(r => r.week === w).length + '件）</option>').join("");
+    sel.onchange = e => { activeWeek = e.target.value; render(); };
+  } else { sel.disabled = true; sel.innerHTML = '<option>週次データなし／1週のみ</option>'; }
+}
+
+function loadMap(){
+  const s = document.createElement("script");
+  s.src = "https://maps.googleapis.com/maps/api/js?key=" + API_KEY + "&v=weekly&language=ja&region=JP&callback=initMap";
+  s.async = true; document.head.appendChild(s);
+}
+
+function initMap(){
+  infoW = new google.maps.InfoWindow();
+  gmap = new google.maps.Map(document.getElementById("map"), {
+    center:{lat:35.6895,lng:139.6917}, zoom:11, gestureHandling:"greedy",
+    mapTypeControl:true, streetViewControl:true, fullscreenControl:true,
+    styles:[{featureType:"poi.business",stylers:[{visibility:"simplified"}]}]
+  });
+  render();
+}
+
+function render(){
+  const vis = ROWS.filter(r => active.has(r.cat) && (activeWeek === "__ALL__" || r.week === activeWeek));
+  document.getElementById("s-total").textContent = ROWS.length.toLocaleString();
+  document.getElementById("s-shown").textContent = vis.length.toLocaleString();
+  document.getElementById("s-skip").textContent  = (skipped || 0).toLocaleString();
+
+  if (cluster){ cluster.clearMarkers(); cluster = null; }
+  markers.forEach(m => m.setMap(null)); markers = [];
+
+  const useCluster = CLUSTER_AT > 0 && vis.length > CLUSTER_AT;
+
+  vis.forEach(r => {
+    const color = CATS.get(r.cat).color;
+    const html = '<div class="nm">' + esc(r.name) + '</div>' +
+      (r.address ? '<div class="kv">' + esc(r.address) + '</div>' : "") +
+      '<div class="kv"><span>カテゴリ：</span>' + esc(r.cat) + '</div>' +
+      (r.week ? '<div class="kv"><span>週次：</span>' + esc(r.week) + '</div>' : "") +
+      Object.entries(r.extras).filter(([k,v]) => v).map(([k,v]) => '<div class="kv"><span>' + esc(k) + '：</span>' + esc(v) + '</div>').join("") +
+      '<div class="btns"><a href="https://www.google.com/maps/search/?api=1&query=' + r.lat + ',' + r.lng + '" target="_blank" rel="noopener">Googleマップで開く</a>' +
+      '<a class="alt" href="https://www.google.com/maps/dir/?api=1&destination=' + r.lat + ',' + r.lng + '&travelmode=walking" target="_blank" rel="noopener">経路</a></div>';
+
+    const mk = new google.maps.Marker({
+      position:{lat:r.lat,lng:r.lng}, title:r.name,
+      icon:{ path: PIN, fillColor: color, fillOpacity:.95, strokeColor:"#fff", strokeWeight:1.6,
+             scale:1.05, anchor:new google.maps.Point(0,0) },
+      optimized: !useCluster
+    });
+    mk.addListener("click", () => { infoW.setContent(html); infoW.open({anchor:mk, map:gmap}); });
+    markers.push(mk);
+  });
+
+  if (useCluster && window.markerClusterer){
+    cluster = new markerClusterer.MarkerClusterer({ map:gmap, markers,
+      renderer:{ render: ({count,position}) => new google.maps.Marker({ position,
+        icon:{ path: google.maps.SymbolPath.CIRCLE, scale: Math.min(30, 13 + Math.log2(count) * 2.4),
+               fillColor:"#07C160", fillOpacity:.85, strokeColor:"#fff", strokeWeight:2 },
+        label:{ text:String(count), color:"#fff", fontSize:"11px", fontWeight:"600" } })}});
+  } else {
+    markers.forEach(m => m.setMap(gmap));
+  }
+
+  if (vis.length){
+    const b = new google.maps.LatLngBounds();
+    vis.forEach(r => b.extend({lat:r.lat,lng:r.lng}));
+    gmap.fitBounds(b, 60);
+  }
+}
+</script>
+<script src="https://unpkg.com/@googlemaps/markerclusterer@2.5.3/dist/index.min.js" async></script>
+</body>
+</html>
