@@ -148,17 +148,29 @@ const CONFIG = {
 /* ---- 密钥从 config.js 读取（config.js 不在版本库里） ---- */
 /* 空字符串视为「未设置」，不覆盖默认值（避免 Secret 没配时变成 0 条） */
 const __SECRET = (window.MAP_SECRET || {});
-if (__SECRET.apiKey)  CONFIG.apiKey  = __SECRET.apiKey;
-if (__SECRET.dataUrl) CONFIG.dataUrl = __SECRET.dataUrl;
-if (__SECRET.colorBy) CONFIG.colorBy = __SECRET.colorBy;
+/* ★ 必须 trim：GitHub Secret 粘贴时极易带进首尾空白/制表符/换行，
+   key 里混一个 \t 就会被 Google 判为 InvalidKeyMapError（且只表现为静默降级到瓦片地图）。
+   trim 后为空视同未设置，不覆盖默认值。 */
+const __sec = v => (v == null ? "" : String(v).trim());
+const __apiKey = __sec(__SECRET.apiKey);
+if (__apiKey)  CONFIG.apiKey  = __apiKey;
+const __dataUrl = __sec(__SECRET.dataUrl);
+if (__dataUrl) CONFIG.dataUrl = __dataUrl;
+const __colorBy = __sec(__SECRET.colorBy);
+if (__colorBy) CONFIG.colorBy = __colorBy;
 
 /* 多数据源也可以从 Secret 传入（GitHub Actions 里是 JSON 字符串，所以两种格式都接） */
 function parseSources(v){
   if (!v) return [];
-  if (Array.isArray(v)) return v.filter(s => s && s.url);
+  /* 同样 trim：url 里混进空白/换行会请求失败，而且报错信息看不出原因 */
+  /* 先 trim 再过滤：url 只有空白时，不 trim 的话会被当成有效源放过去 */
+  const clean = arr => arr.filter(s => s && s.url)
+                          .map(s => ({ label: __sec(s.label) || "数据源", url: __sec(s.url) }))
+                          .filter(s => s.url);
+  if (Array.isArray(v)) return clean(v);
   if (typeof v === "string"){
-    try { const j = JSON.parse(v); return (Array.isArray(j) ? j : [j]).filter(s => s && s.url); }
-    catch { return [{ label:"Secret", url:v }]; }
+    try { const j = JSON.parse(v); return clean(Array.isArray(j) ? j : [j]); }
+    catch { return [{ label:"Secret", url:__sec(v) }]; }
   }
   return [];
 }

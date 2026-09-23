@@ -43,11 +43,13 @@ jobs:
           except Exception:
               print("WARN: MAP_SOURCES is not valid JSON, fallback to []")
               sources = []
+          # ★ strip()：Secret 粘贴时极易带进首尾空白/制表符，key 里一个 \t 就会 InvalidKeyMapError
           cfg = {
-              "apiKey":  os.environ.get("API_KEY", ""),
-              "sources": sources,
-              "dataUrl": os.environ.get("DATA_URL", ""),
-              "colorBy": os.environ.get("COLOR_BY") or "match_status",
+              "apiKey":  (os.environ.get("API_KEY") or "").strip(),
+              "sources": [{k: (v.strip() if isinstance(v, str) else v)
+                           for k, v in s.items()} for s in sources if isinstance(s, dict)],
+              "dataUrl": (os.environ.get("DATA_URL") or "").strip(),
+              "colorBy": (os.environ.get("COLOR_BY") or "match_status").strip(),
           }
           with open("config.js", "w", encoding="utf-8") as f:
               f.write("window.MAP_SECRET = " + json.dumps(cfg, ensure_ascii=False) + ";\n")
