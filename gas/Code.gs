@@ -125,17 +125,126 @@ function installWeeklyTrigger() {
 }
 
 function weeklyRefresh() {
+  const pull  = pullFromKnot();                // Knot が push してくれない週の保険（未設定なら skip）
   const merge = buildMerged();                 // 踩点 + Knot 重新突合
   const rows  = readMerged();
   const res   = updateGitHubFile(rows, "merged.json");
   const res2  = updateGitHubFile(readAll(), "data.json");
-  return { merged: merge, total: rows.length, github: { merged: res, raw: res2 } };
+  return { pull: pull, merged: merge, total: rows.length, github: { merged: res, raw: res2 } };
+}
+
+/* ============================================================
+   Knot 主动拉取（Knot 侧无法定时推送时的兜底）
+   —— 需要 脚本属性：KNOT_AGENT_URL / KNOT_AGENT_TOKEN（+ agent token 模式要 KNOT_USERNAME）
+   —— 没配就自动跳过，不影响 Knot 主动推送那条路
+   ============================================================ */
+
+/** 给 Knot agent 的取数指令。关键是「只吐 JSON」，否则 GAS 解析不出来。 */
+function knotPrompt(week) {
+  return [
+    "请提取 ISO 周次 " + week + "（上一自然周）日本市场的两类数据，只输出 JSON，不要任何解释文字、不要 markdown 代码块：",
+    "1) 子商户进件：本周新完成进件的子商户",
+    "2) 物料激励铺设：本周完成物料铺设的商户",
+    "字段固定为：week, merchant_id, name, category, institution, material, address, lat, lng, note",
+    "week 统一填 " + week + "；category 用数据里的状态口径；lat/lng 没有就填空字符串（不要填 0，不要猜）。",
+    "输出结构：{\"ok\":true,\"week\":\"" + week + "\",\"rows\":[ ... ]}"
+  ].join("\n");
+}
+
+/**
+ * 调 Knot AGUI API 取数 → 写进 Sheet 存档。
+ * 返回 { ok, week, received, added } 或 { ok:false, skipped:true, reason }
+ */
+function pullFromKnot(opt) {
+  opt = opt || {};
+  const p     = P();
+  const url   = p.getProperty("KNOT_AGENT_URL");
+  const token = p.getProperty("KNOT_AGENT_TOKEN");
+
+  if (!url || !token) {
+    return { ok:false, skipped:true, reason:"KNOT_AGENT_URL / KNOT_AGENT_TOKEN 未配置 → 依赖 Knot 主动推送" };
+  }
+
+  const week   = opt.week || isoWeek(new Date());
+  const prompt = opt.prompt || p.getProperty("KNOT_PROMPT") || knotPrompt(week);
+  const user   = p.getProperty("KNOT_USERNAME");
+  const model  = p.getProperty("KNOT_MODEL") || "kimi-k2.5";
+
+  // 个人 token：x-knot-api-token；agent token：x-knot-token + X-Username
+  const headers = {};
+  if (user) { headers["x-knot-token"] = token; headers["X-Username"] = user; }
+  else      { headers["x-knot-api-token"] = token; }
+
+  const body = { input: { message: prompt, conversation_id: "", model: model,
+                          stream: false, enable_web_search: false, temperature: 0.2 } };
+
+  let text;
+  try {
+    const res = UrlFetchApp.fetch(url, {
+      method: "post", contentType: "application/json",
+      headers: headers, payload: JSON.stringify(body),
+      muteHttpExceptions: true
+    });
+    const code = res.getResponseCode();
+    if (code >= 400) return { ok:false, http: code, body: String(res.getContentText()).slice(0, 300) };
+    text = res.getContentText();
+  } catch (err) {
+    return { ok:false, error: String(err) };
+  }
+
+  const parsed = parseKnotPayload(text);
+  if (!parsed) return { ok:false, error:"解析不出 JSON（提示词要求「只输出 JSON」）", preview: String(text).slice(0, 300) };
+
+  const rows = normalize(parsed);
+  if (!rows.length) return { ok:false, error:"解析到 0 行", preview: String(text).slice(0, 300) };
+
+  return { ok:true, week: week, received: rows.length, added: appendRows(rows) };
+}
+
+/**
+ * agent 的返回可能是 ① 纯 JSON ② SSE 流（data: {...}）③ 带 ```json 围栏的文本。
+ * 三种都试一遍，抽成对象；抽不出来返回 null。
+ */
+function parseKnotPayload(text) {
+  if (!text) return null;
+  let s = String(text).trim();
+
+  const looksRows = o => o && (Array.isArray(o) || o.rows || o.data || o.records);
+  try { const o = JSON.parse(s); if (looksRows(o)) return o; } catch (e) {}
+
+  // SSE：拼所有 TEXT_MESSAGE_CONTENT 的 content
+  if (s.indexOf("data:") >= 0 || s.indexOf("TEXT_MESSAGE_CONTENT") >= 0) {
+    let buf = "";
+    s.split("\n").forEach(function (line) {
+      line = String(line).trim();
+      if (line.indexOf("data:") === 0) line = line.slice(5).trim();
+      if (!line || line === "[DONE]") return;
+      let m; try { m = JSON.parse(line); } catch (e) { return; }
+      if (m && m.type === "TEXT_MESSAGE_CONTENT" && m.rawEvent && m.rawEvent.content) buf += m.rawEvent.content;
+    });
+    if (buf) s = buf.trim();
+  }
+
+  s = s.replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
+  const a = s.indexOf("{"), b = s.lastIndexOf("}");
+  if (a >= 0 && b > a) s = s.slice(a, b + 1);
+  try { const o = JSON.parse(s); return looksRows(o) ? o : null; }
+  catch (e) { return null; }
+}
+
+/** 手动验证用：Apps Script 编辑器里直接跑，看能不能打通 Knot */
+function testKnotPull() {
+  const r = pullFromKnot();
+  console.log(JSON.stringify(r, null, 2));
+  return r;
 }
 
 /* ---------- 字段映射：等 Knot 输出样例确定后改这里 ---------- */
 function normalize(payload) {
   const list = Array.isArray(payload) ? payload
              : (payload.rows || payload.data || payload.records || []);
+  // 座標が無い行も「落とさない」。空欄のまま残し、Pipeline の住所ジオコーディングで補う。
+  const num = function (v) { const n = parseFloat(v); return isFinite(n) ? n : ""; };
   return list.map(function (r) {
     return {
       week:        r.week || isoWeek(new Date()),
@@ -145,11 +254,11 @@ function normalize(payload) {
       institution: r.institution || r.org || r.agent || "",
       material:    r.material || "",
       address:     r.address || r.addr || "",
-      lat:         parseFloat(r.lat ?? r.latitude ?? NaN),
-      lng:         parseFloat(r.lng ?? r.longitude ?? NaN),
+      lat:         num(r.lat ?? r.latitude),
+      lng:         num(r.lng ?? r.longitude),
       note:        r.note || r.remark || ""
     };
-  }).filter(function (r) { return isFinite(r.lat) && isFinite(r.lng); });
+  }).filter(function (r) { return r.name || r.merchant_id || r.address; });  // 全項目カラ行だけ捨てる
 }
 
 /* ---------- Sheet：追加存档 ---------- */

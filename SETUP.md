@@ -211,17 +211,56 @@ https://<用户名>.github.io/knot-map/
 5. 手动跑一次验证：编辑器里选 `refreshMerged` → 执行 → 看日志里的突合统计，
    并确认存档 Sheet 里多出了 **「合并」** 和 **「待人工校对」** 两个 tab
 
-### D-3. 接上 Knot
-1. Knot agent 每周跑数的最后一步：POST JSON 到
-   `https://script.google.com/macros/s/XXXX/exec?token=<WEBHOOK_TOKEN>`
-   JSON 格式见 `knot_sample.json`（数组或 `{rows:[...]}` 都行）
-2. GAS 收到后自动完成：存档 → 去重 → **与踩点表突合** → 写「合并」表 → 地图读全量
-3. 把 `https://script.google.com/macros/s/XXXX/exec?format=json` 填进 B-2 `MAP_SOURCES`
+### D-3. 配 Knot agent（提示词）
 
-**Knot 数据要改字段名？** 只改 `gas/Code.gs` 里的 `normalize()` 字段映射（约第 100 行），
-其他都不用动。
+**系统提示词**：整段复制 [`knot/agent_prompt.md`](knot/agent_prompt.md)，粘进 Knot agent 的「系统提示词」框。
 
-### D-4. 「合并」表的列（= 地图气泡里的字段）
+粘之前只改两处：
+1. **时间口径** —— 默认是「上一自然周（JST）」，要改成别的就改那一句
+2. **推送地址** —— 提示词第五节的 `https://script.google.com/macros/s/____/exec?token=____`，
+   换成 D-2 拿到的 `/exec` + 你的 `WEBHOOK_TOKEN`
+
+提示词已经写死了三件事，不要改：
+- **字段契约**（`week / merchant_id / name / category / institution / material / address / lat / lng / note`）
+- **只输出 JSON**（GAS 要解析，多一个字就失败）
+- **坐标没有就留空**（下游按地址补全；填 0 会定位到几内亚湾）
+
+> 你的 agent 接了数据源能直查，所以提示词里让它**自己去 schema 里找表**，不用写死 SQL。
+> 找不到表时它会输出 `{"ok":false,"reason":...}`，你在日志里能看到，再针对性补表名。
+
+### D-4. 接上 Knot（两条路，都配最稳）
+
+两条路**互不冲突**（存档按 `merchant_id + week` 去重留最新，重复到也不怕），建议都配：
+
+| 路线 | 需要 Knot 具备 | 配置 |
+|---|---|---|
+| **① Knot 主动推送** | agent 能发 HTTP（工具/MCP/插件）+ 平台有定时触发 | 提示词第五节已写好 POST；在 Knot 平台配每周定时 |
+| **② GAS 定时去拉** | 不需要 Knot 任何能力 | 见下方 D-4-2 |
+
+#### D-4-2. GAS 定时拉取（兜底，推荐无论如何都配）
+1. Knot 平台 → 个人设置 / API → 拿 **Token**，以及 agent 的 AGUI 地址：
+   `https://knot.woa.com/apigw/api/v1/agents/agui/<agent_id>`
+2. GAS 项目设置 → 脚本属性，追加：
+
+| 属性 | 说明 |
+|---|---|
+| `KNOT_AGENT_URL` | 上面的 AGUI 地址 |
+| `KNOT_AGENT_TOKEN` | `knot_xxx` |
+| `KNOT_USERNAME` | **agent token 模式才填**；个人 token 不填 |
+| `KNOT_MODEL` | 可选，默认 `kimi-k2.5` |
+| `KNOT_PROMPT` | 可选，不填就用内置模板 |
+
+3. 编辑器里跑一次 `testKnotPull()` → 看执行日志：
+   - `{"ok":true,"received":N,...}` = 打通了 ✅
+   - `解析不出 JSON` = agent 开始闲聊了，检查提示词「只输出 JSON」那句有没有生效
+   - `skipped:true` = 上面的属性没配上（属性名拼错最常见）
+4. 跑 `installWeeklyTrigger()` 装每周一 09:00 的触发器
+
+没配这些属性也没关系 —— `pullFromKnot()` 会自动跳过，不影响路线①。
+
+**Knot 数据要改字段名？** 只改 `gas/Code.gs` 里的 `normalize()` 字段映射，其他都不用动。
+
+### D-5. 「合并」表的列（= 地图气泡里的字段）
 
 | 列 | 含义 |
 |---|---|
@@ -236,7 +275,7 @@ https://<用户名>.github.io/knot-map/
 > 每周看一眼就行。改完直接改这个 tab，下次突合会以你改过的为准吗——**不会**，
 > 存档表才是源头。要人工修正请改踩点表或让 Knot 侧修正后重推。
 
-### D-5. 地图配色：一眼看出铺没铺
+### D-6. 地图配色：一眼看出铺没铺
 
 `config.js`（或 GitHub Secrets 加 `MAP_COLOR_BY`）里：
 ```js
@@ -244,7 +283,7 @@ colorBy: "match_status"   // both=绿 / spot-only=蓝 …按 PALETTE 顺序自�
 ```
 其他可选值：`category`（铺设状态）、`area`（商圈）、`institution`（服务商）。
 
-### D-6. 数据量大时的下钻
+### D-7. 数据量大时的下钻
 
 `/exec?format=json` 支持过滤参数，几万点时按需取：
 
@@ -259,7 +298,7 @@ colorBy: "match_status"   // both=绿 / spot-only=蓝 …按 PALETTE 顺序自�
 地图页 URL 同样支持：`points.html?data=https://script.google.com/.../exec?format=json%26pref=東京都`
 （注意 `&` 要写成 `%26`）。
 
-### D-7. 性能（已实测）
+### D-8. 性能（已实测）
 
 | 规模 | 耗时 |
 |---|---|
@@ -283,6 +322,9 @@ colorBy: "match_status"   // both=绿 / spot-only=蓝 …按 PALETTE 顺序自�
 | 该匹配上的没匹配上 | 两边写法差异超出规则 | 看「待人工校对」tab 的 `why`；常见是店名括号备注一边有一边没有（规则已带"包含"加成，但差异太大时只能人工） |
 | 「合并」表没生成 | `SPOT_SHEET_ID` 和 `SPOT_CSV_URL` 都没配 | 至少配一个，然后手动执行 `refreshMerged` |
 | 补出来的坐标不准 | Geocoding 对略称地址（如只有町名）会猜 | 核对 `geocoded=1` 的行；不放心就关 `GEOCODE_ENABLED` |
+| 本周 Knot 数据没进来 | agent 没触发，或推/拉失败 | 编辑器跑 `testKnotPull()` 看返回；`skipped` = 属性没配，`解析不出 JSON` = 提示词没约束住输出格式 |
+| Knot agent 说找不到表 | 提示词让它自己找，但 schema 里命名不一样 | 把日志里 `reason` 的表清单粘给我，我把表名写进提示词 |
+| 地图上周次筛选是空的 | 数据里 `week` 列为空 | 提示词里已强制要求填；已进档的空 week 行需在「明细」表手工补 |
 
 ## 安全总结
 
@@ -301,8 +343,9 @@ python3 -m http.server 8123            # 起服务
 # 浏览器开 http://127.0.0.1:8123/points.html
 
 # ---- 后端（GAS 逻辑，不用部署就能跑）----
-node gas/test.js            # 存档/去重/输出 14 项
+node gas/test.js            # 存档/去重/输出 15 项
 node gas/test_pipeline.js   # 突合层 40 项（归一化/匹配/补坐标/打标）
+node gas/test_knot.js       # Knot 拉取兜底 20 项（SSE/JSON/围栏解析 + 认证头）
 node gas/test_real.js       # 真实 asakusa 1598 行压测（召回率+耗时）
 node gas/make_sample.js     # 重新生成 merged_sample.csv（改完规则跑一下）
 
@@ -316,4 +359,6 @@ NODE_PATH=/Users/annika/.workbuddy/binaries/node/workspace/node_modules \
 > `merged_sample.csv` 是「合并」表的真实样例（both 500 / spot-only 1098），
 > 地图页可以直接吃它验证配色：`config.js` 里 `sources: [{label:"突合済み", url:"merged_sample.csv"}]`。
 
-样例文件：`knot_sample.json` 是 Knot→GAS 输出的格式模板（12 条样例数据，可安全提交）。
+样例文件：
+- [`knot_sample.json`](knot_sample.json) —— Knot→GAS 输出的格式模板（12 条样例数据，可安全提交）
+- [`knot/agent_prompt.md`](knot/agent_prompt.md) —— 粘进 Knot agent 的系统提示词（完整自洽，改两处即可用）

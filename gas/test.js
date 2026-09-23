@@ -119,8 +119,15 @@ const w39 = [
 const r1 = post(w39, "tok123");
 console.log("  resp:", JSON.stringify(r1));
 check("鉴权 + 解析成功 ok:true", r1.ok === true, r1);
-check("缺坐标行被丢弃（received=2）", r1.received === 2, r1.received);
-check("latitude/longitude 别名被识别", r1.received === 2);
+// ※ 2026-09-23 変更：無座標行は「捨てない」。空欄で残し Pipeline の住所ジオコーディングで補う。
+check("缺坐标行也被保留（received=3）", r1.received === 3, r1.received);
+const sheetNow = SHEETS["TEST_SHEET"]["明细"];
+const rowB = sheetNow.rows.find(r => r[1] === "M002") || [];
+check("latitude/longitude 别名被识别（M002 有坐标）",
+      parseFloat(rowB[7]) === 35.7155 && parseFloat(rowB[8]) === 139.7980, [rowB[7], rowB[8]]);
+const rowC = sheetNow.rows.find(r => r[1] === "M003") || [];
+check("缺坐标行 lat/lng 落库为空串（等补全，不是 0、不是 NaN）",
+      rowC[7] === "" && rowC[8] === "", [rowC[7], rowC[8]]);
 
 console.log("\n=== 2. W40 二次推送（M001 重复，分类更新）===");
 const w40 = [
@@ -131,8 +138,8 @@ const r2 = post(w40, "tok123");
 console.log("  resp:", JSON.stringify(r2));
 const sheet = SHEETS["TEST_SHEET"]["明细"];
 console.log("  Sheet 实际行数（含表头）:", sheet.rows.length);
-check("Sheet 只增不覆盖（1表头 + 2 + 2 = 5 行）", sheet.rows.length === 5, sheet.rows.length);
-check("去重后 total=3（M001/M002/M004）", r2.total === 3, r2.total);
+check("Sheet 只增不覆盖（1表头 + 3 + 2 = 6 行）", sheet.rows.length === 6, sheet.rows.length);
+check("去重后 total=4（M001/M002/M003/M004）", r2.total === 4, r2.total);
 
 console.log("\n=== 3. getPoints() 契约（地图页用）===");
 const gp = sandbox.getPoints();
