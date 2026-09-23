@@ -149,11 +149,11 @@ const BASEMAPS = {
 
 /* ---------------- 列名の自動マッピング（日中英どの見出しでも拾う） ---------------- */
 const ALIAS = {
-  name:     ["name","名称","店名","商户名","商户名称","店铺名","店舗名","施設名","n","title"],
+  name:     ["name","名称","店名","商户名","商户名称","店铺名","店舗名","施設名","shopname","shop_name","store_name","n","title"],
   address:  ["address","addr","地址","住所","所在地","a"],
   lat:      ["lat","latitude","纬度","緯度","y","ido"],
   lng:      ["lng","lon","long","longitude","经度","経度","x","keido"],
-  category: ["category","cat","分类","分類","カテゴリ","カテゴリー","c","状态","状態","ステータス","status","type","種別"],
+  category: ["category","cat","分类","分類","カテゴリ","カテゴリー","c","状态","状態","ステータス","status","type","種別","industry","業種"],
   week:     ["week","周次","週","週次","w","批次","バッチ","date","日期","更新日"]
 };
 const low = s => String(s||"").trim().toLowerCase().replace(/[\s_（）()]/g,"");
@@ -246,7 +246,15 @@ function normalize(raw, srcName){
   const out = []; let skipped = 0;
   raw.forEach(o => {
     const vals = headers.map(h => o[h]);
-    const lat = parseFloat(vals[c.lat]), lng = parseFloat(vals[c.lng]);
+    // 合并坐标列（如踩点表的「LatLng」= "34.665192, 135.501779"）会被 lat/lng 两边的兜底
+    // 正则同时命中，直接 parseFloat 会把经度也解析成纬度（点位集体飘走且无报错）
+    // → 同一列时先按逗号拆开
+    let latV = vals[c.lat], lngV = vals[c.lng];
+    if (c.lat === c.lng && String(latV).includes(",")) {
+      const pair = String(latV).split(",");
+      latV = pair[0]; lngV = pair[1] ?? "";
+    }
+    const lat = parseFloat(latV), lng = parseFloat(lngV);
     if (!isFinite(lat) || !isFinite(lng) || (lat === 0 && lng === 0)) { skipped++; return; }
     // 分類列が無い時はソース名で色分けする（複数ソースが全部「未分類」に潰れるのを防ぐ）
     let cat = String(vals[colorIdx] ?? "未分類").trim() || "未分類";
