@@ -215,8 +215,11 @@ https://<用户名>.github.io/knot-map/
 
 | | 场景 | 用哪个文件 | 改动量 |
 |---|---|---|---|
-| **A（推荐）** | 你**已经有一个跑数 agent**（比如「日本周度新增数据跑数助手」，出 Excel + Markdown 汇报） | [`knot/agent_prompt_addon.md`](knot/agent_prompt_addon.md) —— 整段**追加**到你现有 prompt 末尾 | 只改 1 处：推送地址 |
+| **A1（最省事）** | 你**已经有一个跑数 agent**（比如「日本周度新增数据跑数助手」，出 Excel + Markdown 汇报） | [`knot/agent_prompt_full.md`](knot/agent_prompt_full.md) —— **完整合并版**，整段替换 agent 的系统提示词 | 只改 1 处：推送地址 |
+| **A2** | 同上，但你想保留 prompt 的版本独立性、只贴增量 | [`knot/agent_prompt_addon.md`](knot/agent_prompt_addon.md) —— 整段**追加**到你现有 prompt 末尾 | 只改 1 处：推送地址 |
 | **B** | 从零建一个**只服务地图**的 agent | [`knot/agent_prompt.md`](knot/agent_prompt.md) —— 整段粘进「系统提示词」 | 改 2 处：时间口径 + 推送地址 |
+
+> A1 和 A2 内容等价，只是打包方式不同：A1 一整份直接覆盖，A2 追加到现有 prompt 后面。
 
 #### 接法 A：给现有跑数 agent 加「任务C」
 

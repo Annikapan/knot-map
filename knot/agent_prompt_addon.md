@@ -1,5 +1,9 @@
 # 任务C：把本周数据同步给地图 —— 追加到你现有 prompt 末尾
 
+> 想要**一整份完整 prompt**（原跑数 prompt + 任务C 已合并好）的话，直接用
+> [`agent_prompt_full.md`](agent_prompt_full.md)，整段覆盖 agent 的系统提示词即可，改 1 处推送地址。
+> 本文件则是**纯增量**，适合你想保留自己那份 prompt 原貌、只追加任务C 的情况。
+>
 > **用法**：整段粘在你现有「日本周度新增数据跑数助手」prompt 的最后（「## 参考资产」之后）。
 > **不改你原有任何内容**：任务A/B 的 SQL、口径、红线、Excel 交付、notify 全部原样保留，任务C 只是多吐一份数据。
 > 粘之前只改 **一处**：推送地址（PUSH_URL，Part D 部署 GAS 后拿到的 `/exec?token=xxx`）。
