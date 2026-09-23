@@ -1,125 +1,158 @@
 <!doctype html>
-<html lang="ja">
+<html lang="zh-CN">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=5">
-<title>物料铺设マップ</title>
+<title>物料铺设地图</title>
 <style>
-  html,body{margin:0;height:100%;font-family:-apple-system,"Hiragino Sans","Noto Sans JP",system-ui,sans-serif;color:#1f2328;background:#fff}
+  /* 视觉参照 Google My Maps：白底侧栏 + 图层列表 + 图钉图标 + 灰底搜索框 */
+  :root{
+    --g-blue:#1a73e8; --g-text:#202124; --g-sub:#5f6368; --g-line:#dadce0;
+    --g-hover:#f1f3f4;
+  }
+  html,body{margin:0;height:100%;
+    font-family:Roboto,"Google Sans","Noto Sans SC","PingFang SC","Hiragino Sans","Microsoft YaHei",system-ui,sans-serif;
+    color:var(--g-text);background:#fff}
   #wrap{display:flex;height:100%}
-  #panel{width:270px;flex:none;border-right:1px solid #e5e7eb;background:#fff;overflow-y:auto;padding:14px 14px 24px}
-  #map{flex:1;min-width:0}
-  h1{font-size:15px;margin:0 0 2px;font-weight:600}
-  .sub{font-size:11px;color:#6b7280;margin-bottom:12px;line-height:1.5}
-  .stat{display:flex;justify-content:space-between;font-size:12px;padding:3px 0;border-bottom:1px dashed #eef0f3}
-  .stat b{font-weight:600}
-  .sec{font-size:11px;color:#6b7280;margin:14px 0 6px;letter-spacing:.04em}
-  .lg{display:flex;align-items:center;gap:7px;padding:5px 6px;border-radius:6px;cursor:pointer;font-size:12.5px;user-select:none}
-  .lg:hover{background:#f3f4f6}
-  .lg.off{opacity:.35}
-  .dot{width:11px;height:11px;border-radius:50%;flex:none;border:1.5px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.12)}
-  .cnt{margin-left:auto;font-variant-numeric:tabular-nums;color:#6b7280;font-size:11.5px}
-  select{width:100%;font-size:12.5px;padding:5px 6px;border:1px solid #d1d5db;border-radius:6px;background:#fff;margin-bottom:2px}
-  select:disabled{background:#f9fafb;color:#9ca3af}
-  .iw{font-size:12.5px;line-height:1.6;max-width:250px}
-  .iw .nm{font-weight:600;font-size:13.5px;margin-bottom:3px}
-  .iw .kv{color:#4b5563}
-  .iw .kv span{color:#6b7280}
-  .btns{margin-top:8px;display:flex;gap:6px}
-  .btns a{font-size:11.5px;padding:4px 9px;border-radius:6px;background:#07C160;color:#fff;text-decoration:none}
-  .btns a.alt{background:#1677ff}
-  .warn{background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;font-size:11.5px;padding:7px 9px;border-radius:6px;margin-top:10px;line-height:1.5}
-  @media(max-width:720px){#wrap{flex-direction:column}#panel{width:auto;max-height:38%;border-right:0;border-bottom:1px solid #e5e7eb}#map{flex:1}}
+  #panel{width:330px;flex:none;border-right:1px solid var(--g-line);background:#fff;overflow-y:auto;padding:0 0 28px}
+  #map{flex:1;min-width:0;background:#f8f9fa}
+  .phead{padding:18px 20px 8px}
+  h1{font-size:22px;margin:0;font-weight:500;letter-spacing:.2px}
+  .sub{font-size:12.5px;color:var(--g-sub);margin-top:6px;line-height:1.6}
+  .search{margin:12px 16px 8px;display:flex;align-items:center;gap:8px;background:var(--g-hover);
+          border-radius:8px;padding:0 12px;height:40px}
+  .search svg{flex:none}
+  .search input{flex:1;border:0;background:transparent;outline:none;font-size:14px;color:var(--g-text);height:100%;min-width:0}
+  .search input::placeholder{color:#9aa0a6}
+  #hitList{max-height:220px;overflow-y:auto;margin:0 8px 6px}
+  .hit{display:flex;gap:9px;align-items:flex-start;padding:7px 12px;border-radius:8px;cursor:pointer;font-size:13px}
+  .hit:hover{background:var(--g-hover)}
+  .hit .t{font-weight:500;line-height:1.4}
+  .hit .a{color:var(--g-sub);font-size:11.5px;margin-top:2px;line-height:1.45}
+  .stats{margin:6px 20px 4px}
+  .stat{display:flex;justify-content:space-between;font-size:13px;padding:5px 0;border-bottom:1px solid #f1f3f4}
+  .stat span{color:var(--g-sub)}
+  .stat b{font-weight:500;font-variant-numeric:tabular-nums}
+  .sec{font-size:12px;color:var(--g-sub);margin:16px 20px 6px;letter-spacing:.05em}
+  .lg{display:flex;align-items:center;gap:10px;padding:7px 20px;cursor:pointer;font-size:13.5px;user-select:none}
+  .lg:hover{background:var(--g-hover)}
+  .lg.off{opacity:.4}
+  .lg.off .nm{text-decoration:line-through}
+  .lg .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .pin{flex:none;display:block}
+  .cnt{margin-left:auto;color:var(--g-sub);font-size:12px;font-variant-numeric:tabular-nums;flex:none}
+  select{display:block;width:calc(100% - 40px);margin:0 20px;font-size:13px;padding:7px 8px;border:1px solid var(--g-line);
+         border-radius:6px;background:#fff;color:var(--g-text)}
+  select:disabled{background:#f8f9fa;color:#9aa0a6}
+  .iw{font-size:13px;line-height:1.65;max-width:260px}
+  .iw .nm{font-weight:500;font-size:14.5px;margin-bottom:4px}
+  .iw .kv{color:#3c4043}
+  .iw .kv span{color:var(--g-sub)}
+  .btns{margin-top:9px;display:flex;gap:6px}
+  .btns a{font-size:12px;padding:5px 10px;border-radius:6px;background:#07C160;color:#fff;text-decoration:none}
+  .btns a.alt{background:var(--g-blue)}
+  .warn{background:#fef7e0;border:1px solid #fde293;color:#7a4b00;font-size:12px;padding:8px 10px;
+        border-radius:8px;margin:10px 16px 0;line-height:1.55}
+  .empty{color:var(--g-sub);font-size:12.5px;padding:6px 20px}
+  @media(max-width:720px){#wrap{flex-direction:column}#panel{width:auto;max-height:46%;border-right:0;border-bottom:1px solid var(--g-line)}#map{flex:1}}
 </style>
 </head>
 <body>
 <div id="wrap">
   <aside id="panel">
-    <h1>物料铺设マップ</h1>
-    <div class="sub" id="src">読み込み中…</div>
+    <div class="phead">
+      <h1>物料铺设地图</h1>
+      <div class="sub" id="src">正在加载…</div>
+    </div>
 
-    <div class="stat"><span>総件数</span><b id="s-total">–</b></div>
-    <div class="stat"><span>表示中</span><b id="s-shown">–</b></div>
-    <div class="stat"><span>座標なし（スキップ）</span><b id="s-skip">–</b></div>
+    <div class="search">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="#5f6368" aria-hidden="true"><path d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+      <input id="q" type="search" placeholder="在此地图中搜索（店名 / 地址）" autocomplete="off">
+    </div>
+    <div id="hitList"></div>
+
+    <div class="stats">
+      <div class="stat"><span>地点总数</span><b id="s-total">–</b></div>
+      <div class="stat"><span>当前显示</span><b id="s-shown">–</b></div>
+      <div class="stat"><span>无坐标（已跳过）</span><b id="s-skip">–</b></div>
+    </div>
+
+    <div class="sec">图层（点击可隐藏 / 显示）</div>
+    <div id="legend"></div>
+
+    <div class="sec" id="srcSec">数据源（点击可切换）</div>
+    <div id="srcList"></div>
 
     <div id="baseWrap">
-      <div class="sec">ベース地図</div>
+      <div class="sec">底图</div>
       <select id="baseSel"></select>
     </div>
 
-    <div class="sec">週次フィルタ</div>
-    <select id="weekSel"><option>全期間</option></select>
+    <div class="sec">周次</div>
+    <select id="weekSel"><option>全部时间</option></select>
 
-    <div class="sec" id="srcSec">データソース（クリックで切替）</div>
-    <div id="srcList"></div>
-
-    <div class="sec">カテゴリ（クリックで切替）</div>
-    <div id="legend"></div>
     <div id="note"></div>
   </aside>
   <div id="map"></div>
 </div>
 
-<!-- 秘匿設定（API キー）。config.js は .gitignore 済み → git にキーが残りません。
-     無くても動作します（Google キー無しならタイル地図に自動フォールバック）。 -->
+<!-- 密钥配置（API key）。config.js 已被 .gitignore 排除 → 不会进 git。
+     没有 key 也能跑（会自动降级为瓦片地图）。 -->
 <script src="config.js"></script>
 
 <script>
 /* ============================================================
-   設定：ここだけ書き換えれば動きます
+   配置：改这里就能跑
    ============================================================ */
 const CONFIG = {
-  // ① Google Maps JS API キー
-  //     ★ セキュリティのため、キーはこのファイルには書かず config.js に書いてください。
-  //       config.js は .gitignore 済み → git / GitHub にキーが残りません。
-  //       この行は空のままでOK（config.js の値で上書きされます）
+  // ① Google Maps JS API 密钥
+  //    ★ 出于安全考虑，key 不要写在这里，写到 config.js（该文件不进 git）
   apiKey: "",
 
-  // ①-b 無キー時の既定ベース地図。既定 "gsi-pale"（国土地理院 淡色＝Googleに近い灰階・建物まで詳細）
-  //     ※ Positron(CARTO) は 2026年から API key 必須（key無しだと「API KEY REQUIRED」水印）。
-  //       使う場合は下の cartoKey に key を入れて "positron" に。
-  //     他： "gsi-ortho"（航空写真）/ "osm"（色が多い）
-  //     ★ apiKey を入れた場合は Google Maps 本体が使われ、この設定は無視されます
+  // ①-b 无 key 时的默认底图。默认 "gsi-pale"（国土地理院淡色，接近 Google 的灰阶、日本建筑级细节）
+  //      ※ Positron(CARTO) 自 2026 起强制要求 API key（无 key 会有「API KEY REQUIRED」水印）
+  //     其他可选："gsi-ortho"（航拍）/ "osm"（色彩较多）
+  //     ★ 填了 apiKey 就用 Google Maps 本体，此项被忽略
   baseMap: "gsi-pale",
 
-  // ①-c CARTO Positron を使う場合の API key（任意。空欄でも現在は動作します）
+  // ①-c 使用 CARTO Positron 时的 key（可选）
   cartoKey: "",
 
-  // ② データの在りか。3通りどれでもOK（?data=URL で上書きも可）
-  //   a) 同フォルダの CSV/JSON : "sample.csv"
-  //   b) Google Sheets を「ウェブに公開→CSV」: "https://docs.google.com/spreadsheets/d/e/XXXX/pub?output=csv"
-  //   c) Apps Script の /exec（Sheet を非公開のまま）: "https://script.google.com/macros/s/XXXX/exec"
+  // ② 数据位置，三种都行（也可用 ?data=URL 覆盖）
+  //   a) 同目录 CSV/JSON : "sample.csv"
+  //   b) Google Sheets「发布到网络→CSV」: "https://docs.google.com/spreadsheets/d/e/XXXX/pub?output=csv"
+  //   c) Apps Script 的 /exec（表格保持私有）: "https://script.google.com/macros/s/XXXX/exec"
   dataUrl: "asakusa.csv",
 
-  // ②-b ★複数ソース★ ここに並べたものを全部まとめて1枚の地図に重ねます。
-  //       label = 凡例・切替に出る名前 / url = 上の a〜c いずれか
-  //       1つだけなら上の dataUrl だけでOK。sources を書いたら dataUrl より優先されます。
+  // ②-b ★多数据源★ 列表里的会全部叠加到同一张地图
+  //      label = 图例/开关显示的名字；url = 上面 a〜c 任一
+  //      只有一个源时用 dataUrl 即可；写了 sources 则优先于 dataUrl
   sources: [
-    // { label:"踩点データ（Google Sheets）", url:"https://docs.google.com/spreadsheets/d/e/XXXX/pub?output=csv" },
+    // { label:"踩点数据（Google Sheets）", url:"https://docs.google.com/spreadsheets/d/e/XXXX/pub?output=csv" },
     // { label:"物料激励＋子商户进件（Knot→GAS）", url:"https://script.google.com/macros/s/YYYY/exec?format=json" }
   ],
 
-  // ③ 色分けする列名（GAS「合并」の見出しをそのまま書く）。空なら自動判定
-  //    "match_status" … both / spot-only / knot-only（踩過未铺 / 铺了未踩 が一目で分かる。推奨）
-  //    "category" … 物料铺设ステータス / "area" … 商圈 / "institution" … 服务商
+  // ③ 按哪一列着色（直接写 GAS「合并」表的表头）。留空则自动判断
+  //    "match_status" … both / spot-only / knot-only（踩过未铺 / 铺了未踩 一眼可见。推荐）
+  //    "category" … 物料铺设状态 / "area" … 商圈 / "institution" … 服务商
   colorBy: "match_status",
-  // ④ 既定の中心とズーム（データ読込後に自動で全景に合うので基本不要）
+  // ④ 默认中心点与缩放（数据加载后会自动全览，一般不用改）
   center: { lat: 35.7135, lng: 139.7975 },
   zoom: 14,
-  // ⑤ この点数を超えたら自動でクラスタ（数字バブル）表示。0 で常にOFF
+  // ⑤ 超过这个点数就自动聚合（数字气泡）。0 = 始终关闭
   clusterAt: 800,
-  // ⑥ 地図の言語
-  lang: "ja"
+  // ⑥ 地图语言：zh-CN=中文标签 / ja=日文标签 / en=英文
+  lang: "zh-CN"
 };
 
-/* ---- 秘匿値は config.js から読み込む（config.js は git 管理外） ---- */
-/* 空文字は「未設定」とみなし、既定値を潰さない（Secret 未設定時に 0 件になる事故を防ぐ） */
+/* ---- 密钥从 config.js 读取（config.js 不在版本库里） ---- */
+/* 空字符串视为「未设置」，不覆盖默认值（避免 Secret 没配时变成 0 条） */
 const __SECRET = (window.MAP_SECRET || {});
 if (__SECRET.apiKey)  CONFIG.apiKey  = __SECRET.apiKey;
 if (__SECRET.dataUrl) CONFIG.dataUrl = __SECRET.dataUrl;
 if (__SECRET.colorBy) CONFIG.colorBy = __SECRET.colorBy;
 
-/* 複数ソースも Secret から渡せる（GitHub Actions では JSON 文字列になるので両方受ける） */
+/* 多数据源也可以从 Secret 传入（GitHub Actions 里是 JSON 字符串，所以两种格式都接） */
 function parseSources(v){
   if (!v) return [];
   if (Array.isArray(v)) return v.filter(s => s && s.url);
@@ -131,23 +164,23 @@ function parseSources(v){
 }
 if (__SECRET.sources) CONFIG.sources = parseSources(__SECRET.sources);
 
-/* ---------------- ベース地図（Google の見た目に寄せたタイル） ---------------- */
+/* ---------------- 底图（尽量接近 Google 观感的瓦片） ---------------- */
 const BASEMAPS = {
-  "positron":  { label:"Positron（CARTO）※Googleに最接近・灰階",
+  "positron":  { label:"Positron（CARTO）· 最接近 Google 的浅色",
                  url:"https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
                  attr:'&copy; OpenStreetMap contributors &copy; CARTO', native:19 },
-  "gsi-pale":  { label:"淡色地図（国土地理院）・日本の建物まで詳細",
+  "gsi-pale":  { label:"淡色地图（国土地理院）· 日本建筑级细节",
                  url:"https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png",
                  attr:'&copy; 国土地理院', native:18 },
-  "gsi-ortho": { label:"航空写真（国土地理院）",
+  "gsi-ortho": { label:"航拍影像（国土地理院）",
                  url:"https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg",
                  attr:'&copy; 国土地理院', native:18 },
-  "osm":       { label:"OSM 標準（色が多い）",
+  "osm":       { label:"OSM 标准（色彩较多）",
                  url:"https://tile.openstreetmap.org/{z}/{x}/{y}.png",
                  attr:'&copy; OpenStreetMap contributors', native:19 }
 };
 
-/* ---------------- 列名の自動マッピング（日中英どの見出しでも拾う） ---------------- */
+/* ---------------- 列名自动映射（中/日/英表头都能识别） ---------------- */
 const ALIAS = {
   name:     ["name","名称","店名","商户名","商户名称","店铺名","店舗名","施設名","shopname","shop_name","store_name","n","title"],
   address:  ["address","addr","地址","住所","所在地","a"],
@@ -163,9 +196,9 @@ function mapCols(headers){
     const k = low(h);
     for (const key in ALIAS) if (!m[key] && ALIAS[key].includes(k)) m[key] = i;
   });
-  // 座標が取れない場合は「lat/lng」を含む列を探す最終手段
-  // ※ findIndex は見つからないと -1 を返すため undefined に正規化する（しないと後段の
-  //   「列が無い」判定が効かず、座標ゼロ件が黙って発生する）
+  // 找不到坐标列时的兜底：找包含 lat/lng 的列
+  // ※ findIndex 找不到返回 -1，必须归一化成 undefined，否则后面「没有该列」的判断失效、
+  //   会出现坐标 0 条却毫无报错的情况
   const findCol = re => { const i = headers.findIndex(h=>re.test(low(h))); return i < 0 ? undefined : i; };
   if (m.lat === undefined) m.lat = findCol(/lat|緯度|纬度|latitude/);
   if (m.lng === undefined) m.lng = findCol(/lng|lon|long|経度|经度|longitude/);
@@ -174,22 +207,22 @@ function mapCols(headers){
 const PALETTE = ["#07C160","#1677ff","#f59e0b","#8b5cf6","#ef4444","#06b6d4","#db2777","#65a30d","#475569","#a16207"];
 const colorOf = (v, i) => PALETTE[i % PALETTE.length];
 
-/* ---------------- 読み込み ---------------- */
+/* ---------------- 数据加载 ---------------- */
 const qs = new URLSearchParams(location.search);
 const DATA_URL = qs.get("data") || CONFIG.dataUrl;
 
-/* 読み込むソース一覧（sources があれば複数、無ければ dataUrl 1本） */
+/* 要加载的数据源列表（有 sources 就多个，没有就 dataUrl 一个） */
 function resolveSources(){
-  if (qs.get("data")) return [{ label:"?data=", url: qs.get("data") }];   // デバッグ用：URL指定を最優先
-  // ?sources=[{"label":"A","url":"a.csv"},...] も可（テストや一時的な比較に便利。config.js を書き換えずに済む）
+  if (qs.get("data")) return [{ label:"?data=", url: qs.get("data") }];   // 调试用：URL 参数优先
+  // 也支持 ?sources=[{"label":"A","url":"a.csv"},...]（临时对比数据时不用改 config.js）
   const qsrc = qs.get("sources");
   if (qsrc){
-    const list = parseSources(qsrc).map((s,i)=>({ label: s.label || ("ソース" + (i+1)), url: s.url }));
+    const list = parseSources(qsrc).map((s,i)=>({ label: s.label || ("数据源" + (i+1)), url: s.url }));
     if (list.length) return list;
   }
   const list = (CONFIG.sources && CONFIG.sources.length)
-    ? CONFIG.sources.map((s,i)=>({ label: s.label || ("ソース" + (i+1)), url: s.url }))
-    : [{ label:"既定", url: DATA_URL }];
+    ? CONFIG.sources.map((s,i)=>({ label: s.label || ("数据源" + (i+1)), url: s.url }))
+    : [{ label:"默认", url: DATA_URL }];
   return list.filter(s => s.url);
 }
 const SOURCES = resolveSources();
@@ -223,24 +256,24 @@ async function loadRows(url){
     return Array.isArray(j) ? j : (j.rows || j.data || j.items || []);
   }
   const txt = await res.text();
-  // xlsx は ZIP（先頭が PK）。そのまま読むと文字化けした挙句「座標列が無い」と誤判定するので先に止める
+  // xlsx 本质是 ZIP（开头是 PK）。直接读会乱码，然后被误判成「没有坐标列」，所以先拦下来
   if (/^PK/.test(txt))
-    throw new Error("読み込んだのは Excel(.xlsx) ファイルです。ブラウザは xlsx を直接読めません。" +
-                    "「名前を付けて保存」で CSV(UTF-8) にするか、GAS の /exec?format=json を dataUrl に指定してください。");
+    throw new Error("读到的是 Excel(.xlsx) 文件，浏览器无法直接解析。" +
+                    "请在表格里「另存为」CSV(UTF-8)，或把 dataUrl 换成 GAS 的 /exec?format=json。");
   const grid = parseCSV(txt);
   if (!grid.length) return [];
   const head = grid[0].map(h => String(h).trim());
   return grid.slice(1).map(r => { const o = {}; head.forEach((h,i)=> o[h] = (r[i] ?? "").trim()); return o; });
 }
 
-/* ---------------- 正規化 ---------------- */
+/* ---------------- 归一化 ---------------- */
 function normalize(raw, srcName){
   if (!raw.length) return [];
   const headers = Object.keys(raw[0]);
   const c = mapCols(headers);
-  if (c.lat === undefined || c.lng === undefined) throw new Error("緯度/経度の列が見つかりません（見出し: " + headers.join(" / ") + "）");
-  // ★ colorBy で指定された列が「実際の色分け」に使われるように、列インデックスまで落とす
-  //   （以前は colorKey を画面表示にしか使っておらず、色分けは常に category 列のままだった）
+  if (c.lat === undefined || c.lng === undefined) throw new Error("未找到纬度/经度列（表头: " + headers.join(" / ") + "）");
+  // ★ colorBy 指定的列要真正用于着色，所以要把列下标也带下去
+  //   （之前 colorKey 只用于界面显示，实际配色一直用 category 列）
   const colorKey = CONFIG.colorBy && headers.includes(CONFIG.colorBy) ? CONFIG.colorBy : "";
   const colorIdx = colorKey ? headers.indexOf(colorKey) : c.category;
   const out = []; let skipped = 0;
@@ -256,16 +289,16 @@ function normalize(raw, srcName){
     }
     const lat = parseFloat(latV), lng = parseFloat(lngV);
     if (!isFinite(lat) || !isFinite(lng) || (lat === 0 && lng === 0)) { skipped++; return; }
-    // 分類列が無い時はソース名で色分けする（複数ソースが全部「未分類」に潰れるのを防ぐ）
-    let cat = String(vals[colorIdx] ?? "未分類").trim() || "未分類";
+    // 没有分类列时按数据源名着色（避免多源数据全都被压成「未分类」）
+    let cat = String(vals[colorIdx] ?? "未分类").trim() || "未分类";
     if (!colorKey && srcName && SOURCES.length > 1) cat = srcName;
     const extras = {};
     headers.forEach((h,i)=>{
-      if (i === colorIdx) return;                       // 色分け列は extras に重複表示しない
+      if (i === colorIdx) return;                       // 着色列不在详情里重复显示
       if (!Object.values(c).includes(i) && String(o[h]||"").trim() !== "") extras[h] = o[h];
     });
     out.push({
-      name: String(vals[c.name] ?? "(名称なし)").trim() || "(名称なし)",
+      name: String(vals[c.name] ?? "(未命名)").trim() || "(未命名)",
       address: String(vals[c.address] ?? "").trim(),
       lat, lng, cat,
       src: srcName || "",
@@ -273,25 +306,28 @@ function normalize(raw, srcName){
       extras
     });
   });
-  skippedCount += skipped;                    // 複数ソースは合算する
+  skippedCount += skipped;                    // 多源时合计
   colorColumn = colorKey || (c.category !== undefined ? headers[c.category] : "") ||
-                (SOURCES.length > 1 ? "ソース" : "カテゴリ");
+                (SOURCES.length > 1 ? "数据源" : "分类");
   return out;
 }
 
-/* ---------------- 複数ソースをまとめて読む ---------------- */
-/* 1つが壊れても他は生かす（失敗したソースは警告として残す） */
+/* ---------------- 汇总读取多个数据源 ---------------- */
+/* 一个源挂了不影响其它源（失败的源以警告形式保留） */
 const SRC_STATUS = [];
 async function loadAllRows(){
   skippedCount = 0;
-  const jobs = SOURCES.map(async s => {
+  SRC_STATUS.length = 0;
+  // ★ 按 SOURCES 的下标写入，而不是 push：否则列表顺序取决于哪个源先加载完，
+  //   每次刷新侧栏顺序都可能变（点击切换数据源时会点错行）
+  const jobs = SOURCES.map(async (s, idx) => {
     try {
       const raw = await loadRows(s.url);
       const rows = normalize(raw, s.label);
-      SRC_STATUS.push({ label:s.label, ok:true, n:rows.length });
+      SRC_STATUS[idx] = { label:s.label, ok:true, n:rows.length };
       return rows;
     } catch (e){
-      SRC_STATUS.push({ label:s.label, ok:false, n:0, err:e.message });
+      SRC_STATUS[idx] = { label:s.label, ok:false, n:0, err:e.message };
       return [];
     }
   });
@@ -299,7 +335,7 @@ async function loadAllRows(){
   const all = parts.flat();
   if (!all.length){
     const bad = SRC_STATUS.filter(s=>!s.ok).map(s=>`${s.label}: ${s.err}`).join(" / ");
-    throw new Error(bad || "0件でした（CSVの見出し行・URLを確認してください）");
+    throw new Error(bad || "读到 0 条数据（请检查 CSV 表头行或 URL）");
   }
   return all;
 }
@@ -307,9 +343,10 @@ async function loadAllRows(){
 let ROWS = [], skippedCount = 0, colorColumn = "";
 const CATS = new Map();
 let activeCats = new Set(), activeWeek = "__ALL__", activeSrcs = new Set();
+let query = "", renderedVis = [];
 let gmap = null, lmap = null, markers = [], infoW = null, cluster = null, lcluster = null, baseLayer = null;
 
-/* Leaflet + markercluster を順番に読み込む（markercluster は L 依存のため直列） */
+/* Leaflet + markercluster 需要按顺序加载（markercluster 依赖 L，所以串行） */
 function addTag(tag, attrs){
   return new Promise(res=>{
     const e = document.createElement(tag);
@@ -326,40 +363,62 @@ async function loadLeafletStack(){
   await addTag("script",{src:"https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"});
 }
 
-/* ---------------- ピン ---------------- */
+/* ---------------- 图钉 ---------------- */
 const PIN = "M 0,0 C -2.2,-3.2 -7,-8 -7,-12 A 7,7 0 1,1 7,-12 C 7,-8 2.2,-3.2 0,0 z";
+/* 侧栏图层行用的图钉图标（My Maps 风格） */
+const pinIcon = c => `<svg class="pin" width="20" height="20" viewBox="-9 -21 18 22" aria-hidden="true">` +
+  `<path d="${PIN}" fill="${c}" stroke="#ffffff" stroke-width="1.4"/></svg>`;
+
+function esc(s){ return String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+
+/* 气泡内容（Google 信息窗 / Leaflet popup 共用） */
+function popupHTML(r){
+  const color = CATS.get(r.cat) ? CATS.get(r.cat).color : "#07C160";
+  return [
+    `<div class="nm">${esc(r.name)}</div>`,
+    r.address ? `<div class="kv">${esc(r.address)}</div>` : "",
+    (SOURCES.length > 1 && r.src) ? `<div class="kv"><span>数据源：</span>${esc(r.src)}</div>` : "",
+    `<div class="kv"><span>${esc(colorColumn)}：</span>${esc(r.cat)}</div>`,
+    r.week ? `<div class="kv"><span>周次：</span>${esc(r.week)}</div>` : "",
+    Object.entries(r.extras).map(([k,v])=>`<div class="kv"><span>${esc(k)}：</span>${esc(v)}</div>`).join(""),
+    `<div class="btns">
+       <a href="https://www.google.com/maps/search/?api=1&query=${r.lat},${r.lng}" target="_blank" rel="noopener">在 Google 地图中打开</a>
+       <a class="alt" href="https://www.google.com/maps/dir/?api=1&destination=${r.lat},${r.lng}&travelmode=walking" target="_blank" rel="noopener">路线</a>
+     </div>`
+  ].join("");
+}
+
+/* 搜索：按空格分词，全部命中才算匹配（店名 / 地址 / 分类 / 数据源） */
+function rowText(r){ return (r.name + " " + r.address + " " + r.cat + " " + r.src).toLowerCase(); }
+function matchQuery(r){
+  if (!query) return true;
+  const s = rowText(r);
+  return query.toLowerCase().split(/\s+/).filter(Boolean).every(t => s.includes(t));
+}
 
 function render(){
-  const vis = ROWS.filter(r => activeCats.has(r.cat) && activeSrcs.has(r.src)
+  const vis = ROWS.filter(r => activeCats.has(r.cat) && activeSrcs.has(r.src) && matchQuery(r)
                           && (activeWeek === "__ALL__" || r.week === activeWeek));
+  renderedVis = vis;
+
   document.getElementById("s-total").textContent = ROWS.length.toLocaleString();
   document.getElementById("s-shown").textContent = vis.length.toLocaleString();
   document.getElementById("s-skip").textContent  = skippedCount.toLocaleString();
 
-  // 既存をクリア
+  // 清除上一轮
   if (cluster){ cluster.clearMarkers(); cluster = null; }
   if (lcluster){ if (lmap) lmap.removeLayer(lcluster); lcluster = null; }
   markers.forEach(m => { if (m.setMap) m.setMap(null); else if (lmap) lmap.removeLayer(m); });
   markers = [];
 
-  const wantCluster = CONFIG.clusterAt > 0 && vis.length > CONFIG.clusterAt;
+  // 搜索时不做聚合（否则选中的点可能藏在气泡里点不到）
+  const wantCluster = CONFIG.clusterAt > 0 && !query && vis.length > CONFIG.clusterAt;
   const useCluster  = wantCluster && gmap && window.markerClusterer;
   const useClusterL = wantCluster && lmap && window.L && L.markerClusterGroup;
 
   vis.forEach(r => {
-    const color = CATS.get(r.cat).color;
-    const lines = [
-      `<div class="nm">${esc(r.name)}</div>`,
-      r.address ? `<div class="kv">${esc(r.address)}</div>` : "",
-      (SOURCES.length > 1 && r.src) ? `<div class="kv"><span>ソース：</span>${esc(r.src)}</div>` : "",
-      `<div class="kv"><span>${esc(colorColumn)}：</span>${esc(r.cat)}</div>`,
-      r.week ? `<div class="kv"><span>週次：</span>${esc(r.week)}</div>` : "",
-      Object.entries(r.extras).map(([k,v])=>`<div class="kv"><span>${esc(k)}：</span>${esc(v)}</div>`).join(""),
-      `<div class="btns">
-         <a href="https://www.google.com/maps/search/?api=1&query=${r.lat},${r.lng}" target="_blank" rel="noopener">Googleマップで開く</a>
-         <a class="alt" href="https://www.google.com/maps/dir/?api=1&destination=${r.lat},${r.lng}&travelmode=walking" target="_blank" rel="noopener">経路</a>
-       </div>`
-    ].join("");
+    const color = CATS.get(r.cat) ? CATS.get(r.cat).color : "#07C160";
+    const lines = popupHTML(r);
 
     if (gmap){
       const mk = new google.maps.Marker({
@@ -388,7 +447,7 @@ function render(){
     } else {
       markers.forEach(m => m.setMap(gmap));
     }
-    if (vis.length){
+    if (vis.length && !query){
       const b = new google.maps.LatLngBounds();
       vis.forEach(r => b.extend({lat:r.lat,lng:r.lng}));
       gmap.fitBounds(b, 60);
@@ -409,34 +468,74 @@ function render(){
     } else {
       markers.forEach(m => m.addTo(lmap));
     }
-    lmap.fitBounds(L.latLngBounds(vis.map(r=>[r.lat,r.lng])).pad(0.15));
+    if (!query) lmap.fitBounds(L.latLngBounds(vis.map(r=>[r.lat,r.lng])).pad(0.15));
   }
 }
 
-function esc(s){ return String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+/* 点击搜索结果：地图居中并弹出该点详情 */
+function focusRow(r){
+  const i = renderedVis.indexOf(r);
+  if (i < 0) return;
+  const mk = markers[i];
+  if (!mk) return;
+  if (gmap){
+    gmap.setCenter({ lat:r.lat, lng:r.lng });
+    gmap.setZoom(18);
+    infoW.setContent(popupHTML(r));
+    infoW.open({ anchor: mk, map: gmap });
+  } else if (lmap){
+    lmap.setView([r.lat, r.lng], 18);
+    mk.openPopup();
+  }
+}
 
-/* ---------------- 凡例・フィルタ ---------------- */
+/* 搜索结果列表（My Maps 侧栏样式） */
+function renderHits(){
+  const box = document.getElementById("hitList");
+  if (!box) return;
+  if (!query){
+    box.innerHTML = "";
+    return;
+  }
+  const hits = renderedVis.slice(0, 60);
+  if (!hits.length){
+    box.innerHTML = `<div class="empty">没有匹配的地点</div>`;
+    return;
+  }
+  box.innerHTML = hits.map(r =>
+    `<div class="hit">${pinIcon(CATS.get(r.cat) ? CATS.get(r.cat).color : "#07C160")}` +
+    `<div><div class="t">${esc(r.name)}</div>` +
+    (r.address ? `<div class="a">${esc(r.address)}</div>` : "") + `</div></div>`).join("");
+  const els = box.querySelectorAll(".hit");
+  els.forEach((el,i)=>{ el.onclick = ()=> focusRow(hits[i]); });
+  if (renderedVis.length > hits.length)
+    box.insertAdjacentHTML("beforeend",
+      `<div class="empty">仅显示前 ${hits.length} 条，共 ${renderedVis.length.toLocaleString()} 条匹配</div>`);
+}
+
+/* ---------------- 图例与筛选 ---------------- */
 function buildUI(){
   const cats = [...new Set(ROWS.map(r=>r.cat))].sort((a,b)=>
     ROWS.filter(r=>r.cat===b).length - ROWS.filter(r=>r.cat===a).length);
   cats.forEach((c,i)=> CATS.set(c, {color: colorOf(c,i), n: ROWS.filter(r=>r.cat===c).length}));
   activeCats = new Set(cats);
 
-  /* ---- データソース切替（複数ソース時だけ表示） ---- */
+  /* ---- 数据源开关（仅多源时显示） ---- */
   const srcNames = [...new Set(ROWS.map(r=>r.src).filter(Boolean))];
   activeSrcs = new Set(srcNames.length ? srcNames : ROWS.map(()=>""));
   if (srcNames.length > 1){
     document.getElementById("srcList").innerHTML = SRC_STATUS.map(s=>{
       const n = ROWS.filter(r=>r.src===s.label).length;
       const dot = s.ok ? "#07C160" : "#ef4444";
-      const t   = s.ok ? `${n.toLocaleString()}件` : `失敗`;
-      return `<div class="lg" data-s="${esc(s.label)}" title="${esc(s.err||"")}"><span class="dot" style="background:${dot}"></span><span>${esc(s.label)}</span><span class="cnt">${t}</span></div>`;
+      const t   = s.ok ? `${n.toLocaleString()} 个` : `失败`;
+      return `<div class="lg" data-s="${esc(s.label)}" title="${esc(s.err||"")}">` +
+             `${pinIcon(dot)}<span class="nm">${esc(s.label)}</span><span class="cnt">${t}</span></div>`;
     }).join("");
     document.querySelectorAll("#srcList .lg").forEach(el=> el.onclick = ()=>{
       const s = el.dataset.s;
       if (activeSrcs.has(s) && activeSrcs.size > 1){ activeSrcs.delete(s); el.classList.add("off"); }
       else { activeSrcs.add(s); el.classList.remove("off"); }
-      render();
+      render(); renderHits();
     });
   } else {
     document.getElementById("srcSec").style.display = "none";
@@ -445,40 +544,45 @@ function buildUI(){
 
   document.getElementById("legend").innerHTML = cats.map(c=>{
     const m = CATS.get(c);
-    return `<div class="lg" data-c="${esc(c)}"><span class="dot" style="background:${m.color}"></span><span>${esc(c)}</span><span class="cnt">${m.n}</span></div>`;
+    return `<div class="lg" data-c="${esc(c)}">${pinIcon(m.color)}` +
+           `<span class="nm">${esc(c)}</span><span class="cnt">${m.n.toLocaleString()}</span></div>`;
   }).join("");
-  // ※ ".lg" だと #srcList の行まで掴んで上書きしてしまうので "#legend .lg" に限定する
+  // ※ 选择器写成 ".lg" 会把 #srcList 的行也抓进来并覆盖其事件，必须限定为 "#legend .lg"
   document.querySelectorAll("#legend .lg").forEach(el=> el.onclick = ()=>{
     const c = el.dataset.c;
     if (activeCats.has(c) && activeCats.size > 1){ activeCats.delete(c); el.classList.add("off"); }
     else { activeCats.add(c); el.classList.remove("off"); }
-    render();
+    render(); renderHits();
   });
 
   const weeks = [...new Set(ROWS.map(r=>r.week).filter(Boolean))].sort().reverse();
   const sel = document.getElementById("weekSel");
   if (weeks.length > 1){
-    sel.innerHTML = `<option value="__ALL__">全期間（${ROWS.length}件）</option>` +
-      weeks.map(w=>`<option value="${esc(w)}">${esc(w)}（${ROWS.filter(r=>r.week===w).length}件）</option>`).join("");
-    sel.onchange = e => { activeWeek = e.target.value; render(); };
-  } else { sel.disabled = true; sel.innerHTML = `<option>週次の列なし／1週のみ</option>`; }
+    sel.innerHTML = `<option value="__ALL__">全部时间（${ROWS.length.toLocaleString()} 个）</option>` +
+      weeks.map(w=>`<option value="${esc(w)}">${esc(w)}（${ROWS.filter(r=>r.week===w).length.toLocaleString()} 个）</option>`).join("");
+    sel.onchange = e => { activeWeek = e.target.value; render(); renderHits(); };
+  } else { sel.disabled = true; sel.innerHTML = `<option>无周次列／仅 1 周</option>`; }
 
   const okN = SRC_STATUS.filter(s=>s.ok).length;
   document.getElementById("src").innerHTML =
-    `出典：<span style="color:#374151">${okN} / ${SRC_STATUS.length} ソース</span>` +
-    (SRC_STATUS.length > 1 ? `<br>${SRC_STATUS.map(s=>`<span style="color:${s.ok?"#374151":"#b91c1c"}">${esc(s.label)}：${s.ok?s.n+"件":"失敗"}</span>`).join("<br>")}` : "") +
-    `<br>色分け：<b>${esc(colorColumn)}</b>`;
+    `来源：<span style="color:#374151">${okN} / ${SRC_STATUS.length} 个数据源</span>` +
+    (SRC_STATUS.length > 1 ? `<br>${SRC_STATUS.map(s=>`<span style="color:${s.ok?"#374151":"#b91c1c"}">${esc(s.label)}：${s.ok?s.n.toLocaleString()+" 个":"失败"}</span>`).join("<br>")}` : "") +
+    `<br>配色依据：<b>${esc(colorColumn)}</b>`;
 
   const note = document.getElementById("note");
   note.innerHTML = skippedCount
-    ? `<div class="warn">${skippedCount}行は緯度経度が無いためスキップしました。<br>Geocoding API で座標を補完してから再読込してください。</div>`
+    ? `<div class="warn">${skippedCount.toLocaleString()} 行没有经纬度，已跳过。<br>请先用 Geocoding API 补全坐标，再重新加载。</div>`
     : (CONFIG.clusterAt > 0 && ROWS.length > CONFIG.clusterAt
-        ? `<div class="warn">${ROWS.length.toLocaleString()}件：クラスタ表示中。ズームインすると個別ピンに分解されます。</div>` : "");
+        ? `<div class="warn">共 ${ROWS.length.toLocaleString()} 个地点：当前为聚合显示，放大后会拆分成单个图钉。</div>` : "");
+
+  /* 搜索框 */
+  const qEl = document.getElementById("q");
+  if (qEl) qEl.addEventListener("input", ()=>{ query = qEl.value.trim(); render(); renderHits(); });
 }
 
-/* ---------------- 起動 ---------------- */
+/* ---------------- 启动 ---------------- */
 function bootMap(){
-  // __forceTiles: Google のスクリプト自体は読まれても地図が使えない時はタイル側へ固定する
+  // __forceTiles: 即使 Google 脚本加载了、地图却不可用时，强制走瓦片
   if (!__forceTiles && window.google && window.google.maps){
     infoW = new google.maps.InfoWindow();
     gmap = new google.maps.Map(document.getElementById("map"), {
@@ -488,7 +592,7 @@ function bootMap(){
     });
     watchGoogleFailure();
   } else {
-    // maxZoom 20 まで拡大可（タイルは native まで。以降は Leaflet が引き伸ばす）
+    // maxZoom 放到 20（瓦片本身只到 native，之后由 Leaflet 拉伸）
     lmap = L.map("map", {zoomControl:true, maxZoom:20})
              .setView([CONFIG.center.lat, CONFIG.center.lng], CONFIG.zoom);
     baseLayer = makeBase(CONFIG.baseMap).addTo(lmap);
@@ -515,7 +619,7 @@ function buildBaseSel(){
   const wrap = document.getElementById("baseWrap");
   const sel  = document.getElementById("baseSel");
   if (!sel || !wrap) return;
-  // Google モードでは Google 本体の地図切替（mapTypeControl）があるので自前 UI は隠す
+  // Google 模式下自带地图类型切换（mapTypeControl），不必再显示自研选择器
   if (gmap){ wrap.style.display = "none"; return; }
   sel.innerHTML = Object.entries(BASEMAPS)
     .map(([k,v])=>`<option value="${k}"${k===CONFIG.baseMap?" selected":""}>${v.label}</option>`).join("");
@@ -524,32 +628,31 @@ function buildBaseSel(){
 
 function initMap(){ if (!gmap && !lmap) bootMap(); }
 
-/* Google Maps が使えない時の保険：タイル地図へ自動で切り替える */
+/* Google Maps 不可用时的保险：自动切换成瓦片地图 */
 let __fellBack = false, __forceTiles = false;
 function fallbackToTiles(reason){
   if (__fellBack || gmap) return;
   __fellBack = true; __forceTiles = true;
   const n = document.getElementById("note");
-  if (n) n.innerHTML = `<span style="color:#b45309">Google Maps を読み込めませんでした（${esc(reason)}）。タイル地図で表示します。</span>`;
-  // Google が描いたエラー画面の残骸を消してから Leaflet を作る
+  if (n) n.innerHTML = `<div class="warn">无法加载 Google Maps（${esc(reason)}）。已切换为瓦片地图显示。</div>`;
+  // 先清掉 Google 画的报错残影，再建 Leaflet
   const el = document.getElementById("map");
   el.innerHTML = "";
   loadLeafletStack().then(()=>{ lmap = null; bootMap(); })
-    .catch(()=>{ if(n) n.innerHTML = `<span style="color:#b91c1c">地図の初期化に失敗しました。</span>`; });
+    .catch(()=>{ if(n) n.innerHTML = `<div class="warn">地图初始化失败。</div>`; });
 }
 
-/* Google 公式の認証失敗フック（呼ばれないケースがあるので下記も併用） */
+/* Google 官方的鉴权失败钩子（有时不会被调用，所以下面还有备用检测） */
 window.gm_authFailure = function(){
   gmap = null;
-  fallbackToTiles("API キーが無効、または referrer 制限・API 制限で拒否されました");
+  fallbackToTiles("API 密钥无效，或被 referrer 限制 / API 限制拒绝");
 };
 
 /* ------------------------------------------------------------
-   Google は キー不正 / referrer 拒否 のとき gm_authFailure を呼ばず、
-   灰色の「エラーが発生しました」画面を出すだけになる（実測）。
-   灰色画面で終わらせないため、次の2経路で検知してタイル地図へ退避する。
-     ① console.error に出る Google のエラーコードを捕まえる（即時）
-     ② .gm-err-container の描画をポーリングで監視（最大 8 秒）
+   Google 在 密钥错误 / referrer 被拒 时，实测不会调用 gm_authFailure，
+   只画一个灰色「发生错误」的方块就结束。为了避免停在灰屏，用两条路兜底：
+     ① 拦截 console.error 里 Google 的错误码（即时）
+     ② 轮询 .gm-err-container 是否出现（最多约 8 秒）
    ------------------------------------------------------------ */
 const GM_ERR = /InvalidKeyMapError|RefererNotAllowedMapError|ApiNotActivatedMapError|ExpiredKeyMapError|MissingKeyMapError|ProjectDeniedMapError/i;
 let __gmErrHooked = false;
@@ -567,11 +670,11 @@ function watchGoogleFailure(){
   let n = 0;
   const t = setInterval(()=>{
     n++;
-    if (!gmap){ clearInterval(t); return; }              // 既に退避済み
+    if (!gmap){ clearInterval(t); return; }              // 已经切换过了
     if (document.querySelector("#map .gm-err-container")){
       clearInterval(t); gmap = null;
-      fallbackToTiles("Google Maps がエラー画面を返しました（API キー不正 / referrer 制限 / API 未許可）");
-    } else if (n > 26){                                   // 約 8 秒で打ち切り
+      fallbackToTiles("Google Maps 返回了错误画面（密钥错误 / referrer 限制 / API 未授权）");
+    } else if (n > 26){                                   // 约 8 秒后放弃
       clearInterval(t);
     }
   }, 300);
@@ -583,10 +686,10 @@ function watchGoogleFailure(){
     buildUI();
     const bad = SRC_STATUS.filter(s=>!s.ok);
     if (bad.length) document.getElementById("note").innerHTML =
-      `<div class="warn">${bad.length}件のソースが読めませんでした：<br>${bad.map(s=>`・${esc(s.label)}（${esc(s.err)}）`).join("<br>")}</div>`;
+      `<div class="warn">有 ${bad.length} 个数据源读取失败：<br>${bad.map(s=>`・${esc(s.label)}（${esc(s.err)}）`).join("<br>")}</div>`;
   } catch (e){
     document.getElementById("src").innerHTML =
-      `<span style="color:#b91c1c">読込失敗：${esc(e.message)}</span><br>CONFIG.sources / dataUrl か、CSV の見出し行を確認してください。`;
+      `<span style="color:#b91c1c">加载失败：${esc(e.message)}</span><br>请检查 CONFIG.sources / dataUrl，或 CSV 的表头行。`;
     console.error(e);
   }
 
@@ -594,10 +697,10 @@ function watchGoogleFailure(){
     const s = document.createElement("script");
     s.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(CONFIG.apiKey)}&v=weekly&language=${CONFIG.lang}&region=JP&callback=initMap`;
     s.async = true;
-    s.onerror = ()=> fallbackToTiles("スクリプトの読込エラー／ネットワーク遮断");
+    s.onerror = ()=> fallbackToTiles("脚本加载失败／网络中断");
     document.head.appendChild(s);
-    // 10 秒待っても初期化されなければタイル地図へ（白画面を防ぐ）
-    setTimeout(()=>{ if (!gmap && !lmap) fallbackToTiles("応答なし（10秒タイムアウト）"); }, 10000);
+    // 10 秒还没初始化就切瓦片地图（避免白屏）
+    setTimeout(()=>{ if (!gmap && !lmap) fallbackToTiles("无响应（10 秒超时）"); }, 10000);
   } else {
     loadLeafletStack().then(()=>{ lmap = null; bootMap(); });
   }

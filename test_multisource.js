@@ -44,7 +44,7 @@ const URL = process.env.TEST_URL || "http://127.0.0.1:8123/points.html?sources="
     els.map(e => ({ label: e.textContent.trim(), off: e.classList.contains("off") })));
   console.log("  ソース:", JSON.stringify(srcItems));
   check("ソース一覧が2件表示", srcItems.length === 2, srcItems);
-  check("両方とも取得成功（失敗表示なし）", srcItems.every(s => !/失敗/.test(s.label)), srcItems);
+  check("両方とも取得成功（失败表示なし）", srcItems.every(s => !/失败/.test(s.label)), srcItems);
 
   // 3) 片方をOFFにすると件数が減る
   await page.click("#srcList .lg:nth-child(2)");
