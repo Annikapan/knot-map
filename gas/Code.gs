@@ -80,6 +80,18 @@ function doPost(e) {
  * どちらも Sheet は非公開のままで動く。
  */
 function doGet(e) {
+  // 连通性自检：GET /exec?token=xxx&ping=1
+  // 用来一次性确认三件事：URL 对、token 对、Sheet 读写正常。部署完先跑这个。
+  if (e && e.parameter && e.parameter.ping) {
+    const given = String(e.parameter.token || e.parameter.t || "");
+    const want  = P().getProperty("WEBHOOK_TOKEN") || "";
+    let total = -1, merged = -1, err = "";
+    try { total  = readAll().length;    } catch (ex) { err += "readAll: " + ex; }
+    try { merged = readMerged().length; } catch (ex) { err += (err ? " | " : "") + "readMerged: " + ex; }
+    return out({ ok: !err, pong:true,
+                 tokenOk: want ? (given === want) : null,   // null = 还没配 WEBHOOK_TOKEN
+                 total:total, merged:merged, error: err || undefined });
+  }
   const fmt = (e && e.parameter && (e.parameter.format || e.parameter.f)) || "";
   if (fmt === "json") {
     // view=merged（默认，处理层输出）/ raw（Knot 原始存档）/ spot（踩点源）/ review（待人工校对）

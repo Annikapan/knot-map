@@ -210,6 +210,16 @@ https://<用户名>.github.io/knot-map/
 4. 复制 `/exec` URL
 5. 手动跑一次验证：编辑器里选 `refreshMerged` → 执行 → 看日志里的突合统计，
    并确认存档 Sheet 里多出了 **「合并」** 和 **「待人工校对」** 两个 tab
+6. **连通性自检**（URL + token + Sheet 一次全验完）—— 浏览器或 curl 打开：
+   `https://script.google.com/macros/s/XXXX/exec?token=你的token&ping=1`
+
+   ```bash
+   curl -sS -L 'https://script.google.com/macros/s/XXXX/exec?token=你的token&ping=1'
+   ```
+
+   返回 `{"ok":true,"pong":true,"tokenOk":true,"total":N,"merged":M}` = 全部正常 ✅
+   - `tokenOk:false` → token 拼错；`null` → 脚本属性里还没配 `WEBHOOK_TOKEN`
+   - `ok:false` + `error` → `SHEET_ID` 不对或「明细」tab 没建
 
 ### D-3. 配 Knot agent（提示词）—— 两种接法，选一个
 
@@ -232,9 +242,17 @@ https://<用户名>.github.io/knot-map/
 <<<END_KNOT_JSON>>>
 ```
 
-**为什么用哨兵标记包住，而不是「只输出 JSON」**：你那个 agent 的主体交付是 Excel + Markdown，
-不可能只吐 JSON。哨兵标记让 GAS 能从混合正文里精准截出数据块 —— 正文里就算有 `{ }` 也不会串味。
-（`gas/test_knot_addon.js` 第 3 组用例就是测这个。）
+**推送主路已改为 curl**（agent 有 `terminal` 工具）：数据先落盘成 JSON 文件，再 `--data-binary @文件` POST，
+不受回复长度限制。**哨兵块降级为兜底通道** —— curl 连续失败时才在回复里吐真实数据；
+正常情况下回复末尾只留一行 `rows: []` 的确认块，所以每周那条回复不会再胖 150KB。
+
+三个已经写进提示词的坑：
+- **`-L` 必须带** —— GAS 的 `/exec` 会 302 跳转，不带 `-L` 拿到的是空响应，会被误判成失败
+- **不要用 `-d '{...}'`** —— JSON 塞进命令行引号必错，用 `--data-binary @文件`
+- **只看 HTTP 200 不够** —— GAS 出错也可能返 200，必须读响应体里的 `"ok":true`
+
+为什么还要留哨兵块：curl 这条路挂了的时候有个兜底，而且 GAS 定时拉取（`pullFromKnot`）那条路也靠它解析。
+（`gas/test_knot_addon.js` 第 3 组用例就是测哨兵块从混合正文里截出来。）
 
 字段映射在 addon 的 C-1 表里，已经对齐了你真实 SQL 的输出列：
 
@@ -273,7 +291,7 @@ https://<用户名>.github.io/knot-map/
 
 | 路线 | 需要 Knot 具备 | 配置 |
 |---|---|---|
-| **① Knot 主动推送** | agent 能发 HTTP（工具/MCP/插件）+ 平台有定时触发 | 提示词第五节已写好 POST；在 Knot 平台配每周定时 |
+| **① Knot 主动推送** | ✅ **已确认具备**：agent 挂载了 `terminal`，能执行 curl | 提示词 C-5 已写好完整 curl 命令（含 `-L`）；在 Knot 平台配每周定时 |
 | **② GAS 定时去拉** | 不需要 Knot 任何能力 | 见下方 D-4-2 |
 
 #### D-4-2. GAS 定时拉取（兜底，推荐无论如何都配）
@@ -366,6 +384,9 @@ colorBy: "match_status"   // both=绿 / spot-only=蓝 …按 PALETTE 顺序自�
 | 地图上周次筛选是空的 | 数据里 `week` 列为空 | 提示词里已强制要求填；已进档的空 week 行需在「明细」表手工补 |
 | 本周数据比实际少一截 | 回复太长被平台截断 | `doPost` 返回里的 `partial:true` 就是截断信号。改用 HTTP 分片 POST（每片 ≤300 行 + `chunk:{i,n}`），比在回复里塞长 JSON 稳 |
 | 只有最后一条数据进了地图 | 物料行 `merchant_id` 为空，被去重互相覆盖 | 任务B 必须填 `"MAT"+material_id`；GAS 侧现在也会退回「店名\|地址」去重兜底 |
+| curl 返回空响应 / `HTTP:000` | **忘加 `-L`** —— `/exec` 会 302 跳到 `googleusercontent.com` | curl 命令必须带 `-L` |
+| ping 返回 `tokenOk:false` | token 与 GAS 脚本属性 `WEBHOOK_TOKEN` 不一致 | 两边对照改；返回 `null` = GAS 那边还没配这个属性 |
+| ping 返回 `ok:false` + `error` | Sheet 读写失败（`SHEET_ID` 错 / 没建「明细」tab） | 看 `error` 原文，通常是 SHEET_ID 不对 |
 
 ## 安全总结
 

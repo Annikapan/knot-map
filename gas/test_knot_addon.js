@@ -163,6 +163,18 @@ const e3 = { parameter: { token: "tok123" }, postData: { contents: JSON.stringif
 const o3 = JSON.parse(sandbox.doPost(e3).text);
 check("3 条无 id 的行都保留（不是只剩最后一条）", o3.total === 7, o3.total);
 
+/* ---------- 10. doGet?ping=1 连通性自检 ---------- */
+console.log("\n=== 10. ping 自检（给 agent 的 curl 探测用）===");
+const pOk  = JSON.parse(sandbox.doGet({ parameter: { ping: "1", token: "tok123" } }).text);
+const pBad = JSON.parse(sandbox.doGet({ parameter: { ping: "1", token: "wrong" } }).text);
+const pNon = JSON.parse(sandbox.doGet({ parameter: { ping: "1" } }).text);
+check("ping 返回 pong:true", pOk.pong === true, pOk);
+check("token 对 → tokenOk:true", pOk.tokenOk === true, pOk.tokenOk);
+check("token 错 → tokenOk:false（不是报错）", pBad.tokenOk === false, pBad.tokenOk);
+check("没带 token → tokenOk:false", pNon.tokenOk === false, pNon.tokenOk);
+check("ping 带出存档条数", typeof pOk.total === "number", pOk.total);
+check("ping 不渲染地图页（返回 JSON 而非 HTML）", pOk.ok === true && !pOk.error, pOk);
+
 console.log("\n=== 汇总 ===");
 console.log("  PASS: " + pass + "   FAIL: " + fail);
 process.exit(fail ? 1 : 0);

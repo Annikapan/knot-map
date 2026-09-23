@@ -106,7 +106,7 @@ ORDER BY bind_time_str DESC
 
 ## 任务C：同步本周数据给地图看板（在任务A/B 之后执行）
 
-地图看板需要同一批数据的结构化版本。任务A/B 的 Excel 照常交付，不要因此改变任何交付方式；**在此之外**，把结果转成下面的 JSON 数据块，追加在你回复的最末尾。
+地图看板需要同一批数据的结构化版本。任务A/B 的 Excel 照常交付，不要因此改变任何交付方式；**在此之外**，用 `terminal` 跑 curl 把结果 POST 给地图后端（C-5），回复里只留一行确认块。
 
 ### C-1 只做字段映射，不要再查一次数
 
@@ -140,42 +140,68 @@ ORDER BY bind_time_str DESC
 - 任务B 内同一家店有多个码 → 只保留 `bind_time` 最新的一条，`note` 末尾注明 `｜同店本周N个码`
 - 任务A 和任务B 出现同一家店 → 合成一条：`merchant_id` 用 `smid`，`category` 用 `已铺设礼包或汇率`，`material` 用物料类型，`note` 加 `｜本周同时进件`
 
-### C-4 输出格式：哨兵块
+### C-4 输出：两条通道，POST 优先
 
-在你**回复的最末尾**（所有 Markdown 摘要、Excel 说明之后）追加：
+| 通道 | 什么时候用 |
+|---|---|
+| **① curl POST（主路）** | 你有 `terminal` 工具，走 C-5。**成功就不再往回复里塞数据** |
+| **② 哨兵块（兜底）** | C-5 连续失败，或没有 terminal 工具时 |
+
+POST 成功后，在你**回复的最末尾**只放这个确认块（`rows` 是空数组，**不要**填真实数据）：
 
 ```
 <<<KNOT_JSON>>>
-{"ok":true,"week":"2026-W38","total_rows":1234,"rows":[{...},{...}]}
+{"ok":true,"week":"2026-W38","total_rows":1234,"rows":[]}
 <<<END_KNOT_JSON>>>
 ```
 
-规则：
+只有走通道②时才把真实 rows 填进去。哨兵规则（通道②）：
 - 哨兵标记**必须原样**，前后不要加 markdown 围栏（```），否则下游截不出来
-- JSON 紧凑输出，不要缩进（行数多时缩进会撑爆回复长度）
-- 行数 > 300 时**拆成多个数据块**，每块 ≤ 300 行，多个 `<<<KNOT_JSON>>> ... <<<END_KNOT_JSON>>>` 依次排列
-- 第一块里带 `total_rows`（全周总行数），下游据此判断有没有被截断
+- JSON 紧凑输出，不要缩进
+- 行数 > 300 时拆成多个块，每块 ≤ 300 行，多个 `<<<KNOT_JSON>>> ... <<<END_KNOT_JSON>>>` 依次排列
+- 第一块带 `total_rows`（全周总行数），下游据此判断有没有被截断
 
-### C-5 推送（如果你有 HTTP 请求工具）
+### C-5 用 terminal + curl 推送（已实测可用，主路）
 
-若挂载了 HTTP 请求类工具 / MCP / 插件，**优先走 POST**，比在回复里塞长 JSON 稳得多：
+你挂载的 `terminal` 工具能执行 curl，这是最稳的通道：数据落盘再 POST，不受回复长度限制。
 
+**推送地址**（下文记作 `PUSH_URL`，部署 GAS 后拿到）：
+`https://script.google.com/macros/s/____改成你的____/exec?token=____改成你的____`
+
+先跑一次连通性自检（GET，空 body，只确认 URL + token + 后端正常）：
+```bash
+curl -sS -L 'PUSH_URL&ping=1' -o ping.json -w '\nHTTP:%{http_code}\n'
 ```
-POST https://script.google.com/macros/s/____改成你的____/exec?token=____改成你的____
-Content-Type: application/json
-```
+响应里 `"tokenOk":true` 才继续；`false` 说明 token 不对，`null` 说明下游还没配 token。
 
-body 同样用 C-1 的字段，分片时每片 ≤ 300 行并带上分片信息：
+**第 1 步：把 JSON 写成文件**（`write_to_file`，单次上限 600 行，超出就分文件）
+
+写入本期目录 `/data/workspace/osdata-home/tmp/weekly-jp-{YYYYMMDD}/`：
+- ≤300 行 → 单文件 `knot_payload.json`
+- \>300 行 → 分片 `knot_p1.json` … `knot_pn.json`，每片 ≤300 行且 body 里带 `chunk`：
 
 ```json
 {"ok":true,"week":"2026-W38","chunk":{"i":1,"n":4},"total_rows":1234,"rows":[...]}
 ```
 
-- 依次 POST 第 1…n 片，**最后一片**（`i == n`）才会触发下游突合；中间片只入库
-- 收到 `{"ok":true,...}` 即成功；非 200 或 `ok:false` 时把错误原文原样输出，最多重试 2 次
-- POST 全部成功后，回复里**仍然要**输出 C-4 的哨兵块（`rows` 可以是空数组 `[]`，保留 `week` 和 `total_rows`）—— 这是给「下游定时拉取」那条兜底路径用的
+**第 2 步：POST**（terminal 工具，`commandWorkingDirectory` 填上面的本期目录）
 
-**没有 HTTP 工具**：跳过 C-5，只输出 C-4 哨兵块即可。
+```bash
+curl -sS -L -X POST 'PUSH_URL' -H 'Content-Type: application/json' --data-binary @knot_p1.json -o resp1.json -w '\nHTTP:%{http_code}\n'
+```
+
+三个**不能省**的参数：
+- `-L` —— GAS 的 `/exec` 会 302 跳转，不带它你拿到的是**空响应**，会误判成失败
+- `--data-binary @文件` —— 不要用 `-d '{...}'` 把 JSON 塞进命令行，引号转义必错
+- `-o resp1.json` —— 响应落盘再读，不要直接打印（长响应会刷屏）
+
+多片时依次 POST `knot_p1.json` … `knot_pn.json`，**最后一片**（`i == n`）才会触发下游突合，中间片只入库。
+
+**第 3 步：读响应确认**（`read_file` 读 `resp1.json`）
+
+- 看到 `"ok":true` = 成功 ✅
+- 末片的响应里会有 `merged` 字段（both / spot-only / knot-only 各多少），**把它原样写进你的回复**
+- 非 200 或 `"ok":false` → 把响应原文原样贴出来，重试最多 2 次；仍失败就退回 C-4 通道②
 
 ### C-6 自检清单（输出前逐条确认）
 
@@ -184,7 +210,8 @@ body 同样用 C-1 的字段，分片时每片 ≤ 300 行并带上分片信息�
 - [ ] `lat`/`lng` 全是 `""`，没有 0、没有估算值
 - [ ] 任务B 的 `merchant_id` 都带 `MAT` 前缀
 - [ ] 同一家店没重复出现
-- [ ] 哨兵标记原样，没有 markdown 围栏
+- [ ] 回复末尾的确认块哨兵原样（`rows` 为空数组）；只有走通道②时才填真实数据
+- [ ] 走通道①时：curl 的**响应体**里是 `"ok":true` —— 只看 HTTP 200 不够，GAS 出错也可能返 200
 - [ ] 数据是任务A/B 真实查出来的，不是推测的
 
 ### C-7 失败处理
