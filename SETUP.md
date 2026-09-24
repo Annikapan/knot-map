@@ -1,5 +1,26 @@
 # 从 0 到 1：自动化物料地图搭建手册（双数据源 + 突合处理层版）
 
+> ## ⚠️ 合规版变更（2026-09-24）：已移除 Google 数据链路
+>
+> 进件子商户 + 物料激励数据属受限数据，**不得经过 Google**。以下环节已全部替换：
+>
+> | 环节 | 旧（已废弃） | 现（合规） |
+> |---|---|---|
+> | 处理层 | Google Apps Script（Code.gs / Pipeline.gs） | `tools/pipeline.py`，跑在 GitHub Actions |
+> | Knot 数据收集 | Knot → curl POST → GAS | `tools/fetch_knot.py` 直连 AGUI API |
+> | 累积存储 | Google Sheets | 仓库内静态 `data/merged.json` |
+> | 坐标补全 | Google Geocoding（地址外发） | **关闭**，缺坐标行进「待人工校对」 |
+> | 前端取数 | Sheets 公开 CSV | 同源静态 JSON（零 CORS / 零鉴权） |
+>
+> **仍然保留 Google 的部分**：①底图 Google Maps JS API（只收经纬度，不传商户数据）；②踩点表
+> （不在本次整改范围，且为只读）。
+>
+> 需要配的 Secrets：`KNOT_API_URL`、`KNOT_AGENT_TOKEN`（选配 `KNOT_USERNAME`）、
+> 选配 `SPOT_CSV_URL`（不填则用既有踩点公开 CSV）、选配 `INCENTIVE_AREAS` / `AREA_RULES`。
+> 每周一 09:00 JST（cron `0 0 * * 1`）自动跑：拉 Knot → pipeline → 生成 merged.json → 部署。
+> Part D 里的「建中转 Sheet / 部署 GAS / 填推送地址」步骤**已不再需要**，
+> Knot 提示词改用 `knot/agent_prompt_weekly.md`。
+
 > 目标：一张地图，两个数据源（Google Sheets 踩点数据 + Knot 定时跑的物料激励/子商户进件），
 > 中间有**数据清洗 + 匹配层**，固定链接、每周自动更新、无需人工维护。
 >

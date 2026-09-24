@@ -311,6 +311,8 @@ def read_rows_from_source(src):
             text = _fetch(src)
             via = "url"
         else:
+            if not os.path.exists(src):
+                return [], "none"          # 没拉到 Knot 数据属于正常情况，不算错误
             with open(src, "r", encoding="utf-8-sig") as f:
                 text = f.read()
             via = "file"
