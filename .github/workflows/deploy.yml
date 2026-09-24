@@ -43,6 +43,10 @@ jobs:
           except Exception:
               print("WARN: MAP_SOURCES is not valid JSON, fallback to []")
               sources = []
+          # MAP_SOURCES 未設定なら、パイプライン生成の静的ファイルを使う（同一オリジン・CORS 不要）
+          if not sources:
+              sources = [{"label": "踩点＋Knot 合并", "url": "data/merged.json"}]
+              print("INFO: MAP_SOURCES empty -> default to data/merged.json")
           # ★ strip()：Secret 粘贴时极易带进首尾空白/制表符，key 里一个 \t 就会 InvalidKeyMapError
           cfg = {
               "apiKey":  (os.environ.get("API_KEY") or "").strip(),
@@ -55,6 +59,40 @@ jobs:
               f.write("window.MAP_SECRET = " + json.dumps(cfg, ensure_ascii=False) + ";\n")
           print("config.js generated, sources =", len(sources))
           PY
+
+      # ① Knot から週次データを取得（任意）
+      #   Secret 未設定ならスキップしてもビルドは止めない（--skip-if-unconfigured）
+      #   ※ 旧 GAS への push は撤廃。データは Google を一切経由しない
+      - name: Fetch Knot weekly data
+        env:
+          KNOT_API_URL:     ${{ secrets.KNOT_API_URL }}
+          KNOT_AGENT_TOKEN: ${{ secrets.KNOT_AGENT_TOKEN }}
+          KNOT_USERNAME:    ${{ secrets.KNOT_USERNAME }}
+        run: |
+          python3 tools/fetch_knot.py --skip-if-unconfigured --out data/knot.json \
+            || echo "WARN: Knot 取得をスキップ（踩点のみで続行）"
+
+      # ② 突合パイプライン（踩点 × Knot → data/merged.json）
+      #   失敗しても以前の data/merged.json を残すため、ビルドは止めない
+      - name: Build merged dataset
+        env:
+          SPOT_CSV_URL:    ${{ secrets.SPOT_CSV_URL }}
+          INCENTIVE_AREAS: ${{ secrets.INCENTIVE_AREAS }}
+          AREA_RULES:      ${{ secrets.AREA_RULES }}
+        run: |
+          # Secret 未設定なら既定の公開 CSV（踩点表）を使う。Secret で上書き可
+          SPOT="${SPOT_CSV_URL:-https://docs.google.com/spreadsheets/d/e/2PACX-1vTflfloJoLCv0H--qT8tsu4AfvpbAmQyE9wEbCso7dWTj3rYrwHzbzehU8ZKoXzyfK9FuMh_qSrIB7P/pub?gid=0&single=true&output=csv}"
+          if [ -z "${SPOT}" ] && [ ! -f data/knot.json ]; then
+            echo "WARN: 踩点 CSV 未設定かつ Knot データなし。既存 data/merged.json を使用"
+          else
+            python3 tools/pipeline.py \
+              --spot-csv "${SPOT}" \
+              --knot-json data/knot.json \
+              --out-dir data \
+              --incentive-areas "${INCENTIVE_AREAS}" \
+              --area-rules "${AREA_RULES}" \
+              || echo "WARN: パイプライン失敗。既存 data/merged.json を使用"
+          fi
 
       # データ自動更新（任意）：公開CSVのURLを Secret に入れておくと毎週取り直す
       - name: Refresh data CSV (optional)
