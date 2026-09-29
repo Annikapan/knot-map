@@ -21,6 +21,17 @@
 > Part D 里的「建中转 Sheet / 部署 GAS / 填推送地址」步骤**已不再需要**，
 > Knot 提示词改用 `knot/agent_prompt_weekly.md`。
 >
+> ### 两个 Knot Secret 怎么拿到
+>
+> | Secret | 值长什么样 | 从哪里拿 |
+> |---|---|---|
+> | `KNOT_API_URL` | `https://knot.woa.com/apigw/api/v1/agents/agui/<agent_id>` | Knot 平台打开你那个跑数 agent → 地址栏里的 `agent_id` 拼进上面这个模板 |
+> | `KNOT_AGENT_TOKEN` | `knot_xxx` | Knot 平台 → 个人设置 / API → 生成访问令牌（**只显示一次**，生成后立刻复制） |
+> | `KNOT_USERNAME` | 你的 RTX/企业微信用户名 | **仅当你拿的是「Agent Token」（agent 级）时才填**；拿的是「个人 token」就**不要填** |
+>
+> 判断 token 类型：需要指定某个 agent 才能用的 = Agent Token（要配 `KNOT_USERNAME`）；
+> 跟账号绑定、对所有有权限 agent 通用的 = 个人 token（不填 `KNOT_USERNAME`）。
+>
 > ### 2026-09-29 补充
 >
 > **数据刷新频率**：三源都按**每周一次**同步（每周一 09:00 JST）。踩点数据由 CI 直拉公开 CSV，
