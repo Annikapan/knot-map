@@ -146,11 +146,23 @@ def extract_rows(text):
     return [], {}, "none"
 
 
+def default_trigger():
+    """CI 每轮只发一句触发语。
+    系统提示词应一次性配在 Knot agent 配置里，不要每轮当消息重发——
+    重发全文既浪费 token，也会让 agent 把「规则」误当成「本轮要处理的数据」。"""
+    import datetime
+    y, w, _ = datetime.date.today().isocalendar()
+    return (f"请执行任务C：输出本周（{y}-W{w:02d}）日本新进件子商户与物料激励铺设数据。"
+            "严格按系统提示词约定的 <<<KNOT_JSON>>> 哨兵块格式输出，"
+            "超过 300 行时分片。只输出数据块，不要额外解释。")
+
+
 def main():
     ap = argparse.ArgumentParser(description="从 Knot 拉本周跑数结果")
     ap.add_argument("--out", default="data/knot.json")
-    ap.add_argument("--prompt-file", default="knot/agent_prompt_weekly.md",
-                    help="发给 agent 的 prompt（默认取合规周版）")
+    ap.add_argument("--prompt-file", default="",
+                    help="把整个文件当消息发给 agent（一般不推荐；"
+                         "系统提示词应配在 agent 侧。留空则用内置触发语）")
     ap.add_argument("--message", default="", help="直接给消息，优先级高于 --prompt-file")
     ap.add_argument("--timeout", type=int, default=600)
     ap.add_argument("--skip-if-unconfigured", action="store_true",
@@ -168,13 +180,15 @@ def main():
 
     if a.message:
         message = a.message
-    else:
+    elif a.prompt_file:
         try:
             with open(a.prompt_file, "r", encoding="utf-8") as f:
                 message = f.read()
         except Exception as e:
             print(f"ERROR: 读 prompt 失败 {a.prompt_file}: {e}", file=sys.stderr)
             sys.exit(3)
+    else:
+        message = default_trigger()
 
     t0 = time.time()
     try:

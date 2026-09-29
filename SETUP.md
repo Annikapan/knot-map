@@ -20,6 +20,19 @@
 > 每周一 09:00 JST（cron `0 0 * * 1`）自动跑：拉 Knot → pipeline → 生成 merged.json → 部署。
 > Part D 里的「建中转 Sheet / 部署 GAS / 填推送地址」步骤**已不再需要**，
 > Knot 提示词改用 `knot/agent_prompt_weekly.md`。
+>
+> ### 2026-09-29 补充
+>
+> **数据刷新频率**：三源都按**每周一次**同步（每周一 09:00 JST）。踩点数据由 CI 直拉公开 CSV，
+> 不走 Knot agent——Knot 是数仓跑数 agent，且 GAS 废弃后回传通道（哨兵块）撑不住 2600+ 行明细。
+> 前端读 `merged.json` 快照，滞后最多 7 天。
+>
+> **公开脱敏**：`merged.json` 随 Pages 公开发布，默认剔除
+> `Photo / Spotter / Owner / RecordID / Timestamp` 等内部与个人信息列（精确名 + 模糊模式双匹配）。
+> 需要保留时用 `--keep-sensitive`。
+>
+> **Knot 触发语**：`knot/agent_prompt_weekly.md` 是**系统提示词**，一次性配在 Knot agent 配置里；
+> `fetch_knot.py` 每轮只发一句短触发语，不会把全文当消息重发。
 
 > 目标：一张地图，两个数据源（Google Sheets 踩点数据 + Knot 定时跑的物料激励/子商户进件），
 > 中间有**数据清洗 + 匹配层**，固定链接、每周自动更新、无需人工维护。

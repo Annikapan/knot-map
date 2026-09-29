@@ -497,13 +497,31 @@ MERGED_COLS = ["merchant_id", "name", "category", "spot_category", "knot_categor
                "prefecture", "incentive", "area", "note"]
 
 
-def extra_cols(rows, limit=20, min_fill=0.05):
+# 公开脱敏：merged.json 会随 Pages 公开发布，这些内部/个人信息列一律不带出去。
+# 用「精确名 + 模糊模式」双保险，源表加列时也不会漏。
+SENSITIVE_EXACT = {
+    "photo", "spotter", "owner", "recordid", "timestamp",
+    "photourl", "photos", "email", "phone", "tel",
+}
+SENSITIVE_PAT = re.compile(
+    r"(photo|画像|写真|spotter|担当|owner|責任者|record[_ ]?id|timestamp|"
+    r"日時|作成日|更新日|email|mail|phone|tel|電話|連絡先|署名|社員|個人)", re.I)
+
+
+def is_sensitive(col):
+    k = low_key(col)
+    return k in SENSITIVE_EXACT or bool(SENSITIVE_PAT.search(col or ""))
+
+
+def extra_cols(rows, limit=20, min_fill=0.05, drop_sensitive=True):
     """源表里多出来的列：只保留有一定填充率的（全空的列带出去只会让 JSON 变大）"""
     std = {low_key(c) for c in MERGED_COLS}
     order, fill = [], {}
     for r in rows:
         for k, v in (r.get("_raw") or {}).items():
             if low_key(k) in std:
+                continue
+            if drop_sensitive and is_sensitive(k):
                 continue
             if k not in fill:
                 fill[k] = 0
@@ -516,13 +534,13 @@ def extra_cols(rows, limit=20, min_fill=0.05):
 
 
 def build_merged(spot_src=None, knot_src=None, radius=50.0,
-                 incentive_areas=None, area_rules=None):
+                 incentive_areas=None, area_rules=None, drop_sensitive=True):
     spot_rows, spot_via = read_rows_from_source(spot_src)
     knot_rows, knot_via = read_rows_from_source(knot_src)
     rows, stats = match_and_merge(spot_rows, knot_rows, radius=radius)
     tag_area(rows, incentive_areas, area_rules)
 
-    extra = extra_cols(rows)
+    extra = extra_cols(rows, drop_sensitive=drop_sensitive)
     cols = MERGED_COLS + extra
     for r in rows:
         for k in extra:
@@ -596,6 +614,9 @@ def main():
                     help="激励区域，逗号分隔，例：東京都,大阪府,北海道")
     ap.add_argument("--area-rules", default=os.environ.get("AREA_RULES", ""),
                     help='商圈规则 JSON，例：{"心斋桥":["心斎橋","道頓堀"]}')
+    ap.add_argument("--keep-sensitive", action="store_true",
+                    help="保留 Photo/Spotter/Owner/RecordID/Timestamp 等内部列"
+                         "（默认剔除：merged.json 会随 Pages 公开发布）")
     a = ap.parse_args()
 
     rules = {}
@@ -610,7 +631,8 @@ def main():
         sys.exit(2)
 
     res = build_merged(a.spot_csv, a.knot_json, radius=a.radius,
-                       incentive_areas=a.incentive_areas, area_rules=rules)
+                       incentive_areas=a.incentive_areas, area_rules=rules,
+                       drop_sensitive=not a.keep_sensitive)
     p_json, p_csv, p_rev = write_outputs(res, a.out_dir)
 
     s = res["stats"]
